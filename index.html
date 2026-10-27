@@ -261,8 +261,8 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
       <div class="lt-eyebrow" id="todayDate"></div>
       <h1>今日の締め</h1>
       <div class="lt-sub">
-        <span class="pill loading" id="savePill"><span class="dot"></span><span>保存先を確認中…</span></span>
-        <span class="pill loading" id="aiPill"><span class="dot"></span><span>AI 確認中…</span></span>
+        <span class="pill loading" id="savePill"><span class="dot"></span><span>この端末に保存</span></span>
+        <span class="pill loading" id="aiPill"><span class="dot"></span><span>AI 準備中…</span></span>
       </div>
     </header>
 
@@ -280,7 +280,7 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
 
     <div class="section-h"><span>場所</span><span>タップして撮影・学習</span></div>
     <div class="group icons" id="locList"></div>
-    <p class="footnote" id="locNote">撮影したら、目視で数えた台数を入力してください。その台数が「正解」としてサイトに蓄積され、AIが学習します。</p>
+    <p class="footnote" id="locNote">撮影したら、目視で数えた台数を入力してください。その台数が「正解」としてこの端末に蓄積され、AIが学習します。</p>
 
     <div class="section-h"><span>AIの学習</span></div>
     <div class="group" id="learnCard"></div>
@@ -292,7 +292,7 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
   <!-- 履歴 -->
   <section class="view" id="view-history">
     <header class="lt-head">
-      <div class="lt-eyebrow">サイトに蓄積された記録</div>
+      <div class="lt-eyebrow">この端末に蓄積された記録</div>
       <h1>履歴</h1>
     </header>
     <div class="seg" id="histSeg">
@@ -476,7 +476,7 @@ const locById = id => settings.locations.find(l => l.id === id);
 const locIndex = id => settings.locations.findIndex(l => l.id === id);
 const locName = id => { const l = locById(id); return l ? l.name : '（削除した場所）'; };
 
-/* ---------- local fallback storage (when opened outside claude.ai) ---------- */
+/* ---------- storage: this browser (IndexedDB) ---------- */
 const Local = {
   db: null,
   async open(){
@@ -486,77 +486,34 @@ const Local = {
         r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('samples')) r.result.createObjectStore('samples', {keyPath:'id'}); };
         r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
       });
-    } catch(e){ this.db = null; }
+    } catch(e){ this.db = null; toast('このブラウザではデータを保存できません（プライベートモードなど）'); }
   },
   req(mode, fn){
-    if (!this.db) return Promise.resolve(null);
-    return new Promise((res, rej) => { const t = this.db.transaction('samples', mode); const r = fn(t.objectStore('samples')); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); });
+    if (!this.db) return Promise.reject({code:'unavailable'});
+    return new Promise((res, rej) => { const t = this.db.transaction('samples', mode); const r = fn(t.objectStore('samples')); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); });
   },
-  all(){ return this.req('readonly', s => s.getAll()).then(r => r || []); },
+  all(){ return this.req('readonly', s => s.getAll()).then(r => r || [], () => []); },
   put(o){ return this.req('readwrite', s => s.put(o)); },
   del(id){ return this.req('readwrite', s => s.delete(id)); }
 };
 
-/* ---------- data layer: site database (shared) or local fallback ---------- */
 const Data = {
-  mode: 'pending', db: null, canWrite: true, downloads: null,
+  mode: 'local', canWrite: true, downloads: null,
   async init(){
-    try {
-      if (window.claude && typeof claude.use === 'function'){
-        const db = await claude.use('db');
-        if (db){
-          this.db = db; this.mode = 'cloud';
-          try { const u = await claude.use('user'); if (u){ const c = await u.can('data.write'); this.canWrite = c !== false; } } catch(e){}
-        }
-        try { this.downloads = await claude.use('downloads'); } catch(e){}
-      }
-    } catch(e){}
-    if (this.mode !== 'cloud'){
-      this.mode = 'local'; await Local.open();
-      try { const s = JSON.parse(localStorage.getItem('tc-site-settings')); if (s && Array.isArray(s.locations) && s.locations.length) settings = Object.assign(DEFAULTS(), s); } catch(e){}
-    }
+    await Local.open();
+    // ブラウザが容量不足のときに勝手に消さないよう、永続保存をお願いする
+    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch(e){}
+    try { const s = JSON.parse(localStorage.getItem('tc-site-settings')); if (s && Array.isArray(s.locations) && s.locations.length) settings = Object.assign(DEFAULTS(), s); } catch(e){}
   },
-  subscribe(){
-    if (this.mode === 'cloud'){
-      this.db.collection('samples').orderBy('ts', 'desc').limit(1000).onSnapshot(
-        snap => setSamples(snap.docs.map(d => Object.assign({id: d.id}, d.data()))),
-        e => { if (e.code !== 'revoked') toast('記録を読み込めませんでした。ページを開き直してください'); }
-      );
-      this.db.doc('config/settings').onSnapshot(s => {
-        if (!s.exists) return;
-        const d = s.data();
-        if (d && Array.isArray(d.locations) && d.locations.length){
-          settings = Object.assign(DEFAULTS(), JSON.parse(JSON.stringify(d)));
-          invalidate(); renderToday();
-          const a = document.activeElement;
-          if (currentView() === 'view-settings' && !(a && $('#setBody').contains(a) && /INPUT|TEXTAREA/.test(a.tagName))) renderSettings();
-        }
-      }, () => {});
-    } else {
-      Local.all().then(arr => setSamples(arr));
-    }
-  },
-  async putSample(s){
-    if (this.mode === 'cloud') await this.db.collection('samples').doc(s.id).set(s);
-    else { await Local.put(s); setSamples(samples.filter(x => x.id !== s.id).concat(s)); }
-  },
-  async delSample(id){
-    if (this.mode === 'cloud') await this.db.doc('samples/' + id).delete();
-    else { await Local.del(id); setSamples(samples.filter(x => x.id !== id)); }
-  },
-  async saveSettings(){
-    if (this.mode === 'cloud'){
-      try { await this.db.doc('config/settings').set(JSON.parse(JSON.stringify(settings))); }
-      catch(e){ toast(writeError(e)); }
-    } else { try { localStorage.setItem('tc-site-settings', JSON.stringify(settings)); } catch(e){} }
-  }
+  subscribe(){ Local.all().then(arr => setSamples(arr)); },
+  async putSample(s){ await Local.put(s); setSamples(samples.filter(x => x.id !== s.id).concat(s)); },
+  async delSample(id){ await Local.del(id); setSamples(samples.filter(x => x.id !== id)); },
+  async saveSettings(){ try { localStorage.setItem('tc-site-settings', JSON.stringify(settings)); } catch(e){ toast('設定を保存できませんでした'); } }
 };
 function writeError(e){
-  const c = e && e.code;
-  if (c === 'quota_exceeded') return 'サイトの保存容量がいっぱいです。履歴から古い記録を削除してください';
-  if (c === 'invalid_argument') return '保存する権限がありません（閲覧のみ）';
-  if (c === 'resource_exhausted') return '操作が多すぎます。少し待ってからもう一度お試しください';
-  return '保存できませんでした。通信状況を確認してもう一度お試しください';
+  const n = e && (e.name || e.code);
+  if (n === 'QuotaExceededError') return '保存容量がいっぱいです。履歴の「学習データ」から古い写真を削除してください';
+  return '保存できませんでした。もう一度お試しください';
 }
 
 /* ---------- state ---------- */
@@ -572,33 +529,25 @@ function setSamples(arr){
   if (currentView() === 'view-settings') renderSettings();
 }
 
-/* ---------- AI (Claude reads the photo) ---------- */
+/* ---------- AI (runs inside the browser) ---------- */
 function loadScript(url){ return new Promise((res, rej) => { const s = document.createElement('script'); s.src = url; s.async = true; s.onload = res; s.onerror = () => rej(new Error(url)); document.head.appendChild(s); }); }
 const TF_CLASSES = ['cell phone', 'laptop', 'tv', 'remote'];
 const AI = {
-  fn: null, tf: null, kind: null, status: 'loading', maxImages: 1,
+  tf: null, mn: null, kind: null, status: 'loading',
   async init(){
     try {
-      if (window.claude && typeof claude.use === 'function'){
-        const s = await claude.use('sample');
-        if (s){
-          const lim = await s.limits().catch(() => null);
-          if (lim && lim.images){ this.fn = s; this.maxImages = Math.max(1, lim.images.maxCount || 1); }
-        }
-      }
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+      await Promise.all([
+        loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js'),
+        loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js')
+      ]);
+      await tf.ready();
+      const [d, m] = await Promise.allSettled([cocoSsd.load({base:'lite_mobilenet_v2'}), mobilenet.load({version:2, alpha:1.0})]);
+      if (d.status === 'fulfilled') this.tf = d.value;
+      if (m.status === 'fulfilled') this.mn = m.value;
     } catch(e){}
-    if (this.fn) this.kind = 'claude';
-    else {
-      // claude.ai の外（GitHub Pages など）では、端末内で動く画像認識モデルを使う
-      try {
-        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
-        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
-        await tf.ready();
-        this.tf = await cocoSsd.load({base:'lite_mobilenet_v2'});
-        this.kind = 'tf';
-      } catch(e){ this.tf = null; }
-    }
-    this.status = (this.fn || this.tf) ? 'ready' : 'offline';
+    this.kind = this.tf ? 'tf' : null;
+    this.status = this.tf ? 'ready' : 'offline';
     renderStatus();
     if (cap && !cap.photo) renderAiCard();
   }
@@ -624,35 +573,6 @@ function fingerprint(src){
 }
 function dot(a, b){ let s = 0; for (let i = 0; i < a.length; i++) s += a[i]*b[i]; return s; }
 
-async function askClaude(locId, blob){
-  const l = locById(locId);
-  const maxRefs = Math.min(3, AI.maxImages - 1);
-  const refs = maxRefs > 0 ? samples.filter(s => s.locId === locId && s.img).sort((a, b) => b.ts - a.ts).slice(0, maxRefs).reverse() : [];
-  const images = refs.map(r => dataURLtoBlob(r.img)); images.push(blob);
-  const withDet = samples.filter(s => s.locId === locId && s.det != null && (s.detSrc || 'claude') === 'claude');
-  let tendency = '';
-  if (withDet.length >= 3){
-    const bias = avg(withDet.map(s => s.det - s.count));
-    if (Math.abs(bias) >= .3) tendency = `\n過去の傾向：あなたのこの場所での数え方は、正解より平均 ${Math.abs(bias).toFixed(1)} 台${bias > 0 ? '多め' : '少なめ'}でした。注意して数えてください。`;
-  }
-  const refText = refs.length
-    ? refs.map((r, i) => `画像${i+1}：同じ場所の過去の写真。人が目視で数えた正解は ${r.count} 台。`).join('\n') + `\n画像${refs.length+1}：今回数える写真。`
-    : '画像1：今回数える写真。';
-  const prompt =
-`店舗の締め作業で、写真に写っている端末の台数を数えます。
-場所：${l ? l.name : ''}
-数える対象：${settings.target || DEFAULT_TARGET}
-
-${refText}
-過去の写真は数え方の参考です。並べ方や見え方を比べて、今回の写真の台数を1台ずつ数えてください。重なって一部しか見えない端末も1台として数えます。${tendency}
-
-次のJSONだけを返してください：{"count": 整数, "note": "数え方の根拠を日本語40字以内"}`;
-  const res = await AI.fn.json(prompt, {images, modelTier:'default'});
-  const c = Number(res && res.count);
-  if (!isFinite(c)) throw {code:'invalid_json'};
-  return {count: Math.max(0, Math.round(c)), note: String((res && res.note) || '').slice(0, 80)};
-}
-
 /* ---------- learning: calibration + similar photos + model choice ---------- */
 function fitCalib(t){
   const mx = avg(t.map(s => s.det)), my = avg(t.map(s => s.count));
@@ -666,14 +586,16 @@ const METHODS = {
   detect: { label:'AIが写真を直接カウント', fn:(q) => q.det == null ? null : q.det },
   calib:  { label:'AI＋過去の傾向で補正', fn:(q, tr) => {
     if (q.det == null) return null;
-    const src = q.detSrc || 'claude';
-    const t = tr.filter(s => s.det != null && (s.detSrc || 'claude') === src); if (t.length < 2) return null;
+    const src = q.detSrc || 'tf';
+    const t = tr.filter(s => s.det != null && (s.detSrc || 'tf') === src); if (t.length < 2) return null;
     const {a, b} = fitCalib(t); return a*q.det + b;
   }},
   knn:    { label:'似た写真の台数から推定', fn:(q, tr) => {
-    if (!q.emb) return null;
-    const t = tr.filter(s => s.emb && s.emb.length === q.emb.length); if (t.length < 3) return null;
-    const near = t.map(s => ({c:s.count, sim:dot(q.emb, s.emb)})).sort((x, y) => y.sim - x.sim).slice(0, 3);
+    let key = 'emb2';
+    let t = q.emb2 ? tr.filter(s => s.emb2 && s.emb2.length === q.emb2.length) : [];
+    if (t.length < 3){ key = 'emb'; if (!q.emb) return null; t = tr.filter(s => s.emb && s.emb.length === q.emb.length); }
+    if (t.length < 3) return null;
+    const near = t.map(s => ({c:s.count, sim:dot(q[key], s[key])})).sort((x, y) => y.sim - x.sim).slice(0, 3);
     let w = 0, v = 0; near.forEach(x => { const ww = Math.exp((x.sim - 1) * 15); w += ww; v += ww * x.c; });
     return w ? v / w : null;
   }},
@@ -683,7 +605,7 @@ const METHODS = {
   }}
 };
 function trainSet(locId){
-  return samples.filter(s => s.locId === locId && (s.det != null || s.emb)).sort((a, b) => b.ts - a.ts).slice(0, 200);
+  return samples.filter(s => s.locId === locId && (s.det != null || s.emb || s.emb2)).sort((a, b) => b.ts - a.ts).slice(0, 200);
 }
 function getEval(locId){
   if (evalCache[locId]) return evalCache[locId];
@@ -871,34 +793,20 @@ async function analyze(file){
   sm.getContext('2d').drawImage(work, 0, 0, sm.width, sm.height);
   my.img = sm.toDataURL('image/jpeg', .68);
   my.emb = fingerprint(work);
-  my.photo = true; my.det = null; my.detSrc = null; my.note = ''; my.est = estimate(my.locId, {det:null, emb:my.emb});
+  my.photo = true; my.det = null; my.detSrc = null; my.emb2 = null; my.note = ''; my.est = estimate(my.locId, {det:null, emb:my.emb});
   $('#capImg').src = my.img; $('#capImg').hidden = false; $('#capEmpty').hidden = true; $('#btnRetake').hidden = false;
-  if (AI.fn){
-    my.aiState = 'busy'; renderAiCard(); updateConfirm();
-    my.ctl = new AbortController();
-    try {
-      const blob = await canvasBlob(work, .85);
-      const r = await askClaude(my.locId, blob);
-      if (cap !== my) return;
-      my.det = r.count; my.detSrc = 'claude'; my.note = r.note; my.aiState = 'done';
-      my.est = estimate(my.locId, {det:my.det, detSrc:'claude', emb:my.emb});
-    } catch(e){
-      if (cap !== my) return;
-      const c = e && e.code;
-      my.aiState = c === 'cancelled' ? 'idle' : 'error';
-      if (['not_granted','sampling_disabled','images_unavailable','not_declared','capability_disabled','capability_removed'].includes(c)){ AI.fn = null; AI.status = 'offline'; renderStatus(); }
-      my.err = c === 'rate_limited' ? 'AIの利用回数の上限に達しました。しばらくしてから撮り直してください。'
-        : c === 'not_granted' ? 'AIの利用が許可されませんでした。似た写真からの推定だけで続けます。'
-        : c === 'image_rejected' ? 'この写真はAIに送れませんでした。撮り直してください。'
-        : 'AIの推定に失敗しました。台数の入力と学習はそのまま続けられます。';
-    }
-  } else if (AI.tf){
+  if (AI.tf){
     my.aiState = 'busy'; renderAiCard(); updateConfirm();
     try {
       const preds = await AI.tf.detect(work, 100, 0.35);
+      if (AI.mn){
+        const t = AI.mn.infer(work, true); const arr = await t.data(); t.dispose();
+        let n = 0; for (const v of arr) n += v*v; n = Math.sqrt(n) || 1;
+        my.emb2 = Array.from(arr, v => +(v/n).toFixed(4));
+      }
       if (cap !== my) return;
       my.det = preds.filter(p => TF_CLASSES.includes(p.class)).length; my.detSrc = 'tf';
-      my.aiState = 'done'; my.est = estimate(my.locId, {det:my.det, detSrc:'tf', emb:my.emb});
+      my.aiState = 'done'; my.est = estimate(my.locId, {det:my.det, detSrc:'tf', emb:my.emb, emb2:my.emb2});
     } catch(e){ if (cap !== my) return; my.aiState = 'error'; my.err = 'AIの推定に失敗しました。台数の入力と学習はそのまま続けられます。'; }
   } else my.aiState = 'done';
   if (cap !== my) return;
@@ -954,7 +862,7 @@ function updateConfirm(){
     const d = +v - l.expected;
     n.innerHTML = d === 0 ? `<span class="ok">基準台数 ${l.expected} 台と一致しています</span>` : `<span class="ng">基準台数 ${l.expected} 台より ${d>0?'+':''}${d} 台です。もう一度確認してください</span>`;
   } else {
-    n.textContent = cap.photo ? 'AIの値ではなく、実際に数えた台数を入力してください。この値が「正解」としてサイトに保存され、学習に使われます。' : '写真を撮ると、入力した台数を正解としてAIが学習します。';
+    n.textContent = cap.photo ? 'AIの値ではなく、実際に数えた台数を入力してください。この値が「正解」としてこの端末に保存され、学習に使われます。' : '写真を撮ると、入力した台数を正解としてAIが学習します。';
   }
 }
 $('#capCount').addEventListener('input', updateConfirm);
@@ -968,7 +876,7 @@ $('#btnConfirm').onclick = async () => {
   const my = cap;
   const s = {
     id: uid(), locId: my.locId, date: dayKey(), ts: Date.now(), count: c,
-    det: my.det, detSrc: my.detSrc || null, emb: my.emb, img: my.img,
+    det: my.det, detSrc: my.detSrc || null, emb: my.emb, emb2: my.emb2 || null, img: my.img,
     estimate: my.est ? my.est.value : null, method: my.est ? my.est.method : null, trainOnly: my.trainOnly
   };
   my.saving = true; updateConfirm();
@@ -1062,7 +970,7 @@ function renderDataList(body){
 }
 $('#delSel').onclick = async () => {
   const ids = [...selected]; if (!ids.length) return;
-  const yes = await ask({title:`${ids.length} 件の学習データを削除しますか？`, message:'写真と台数がサイトから削除され、AIの学習にも使われなくなります。元に戻せません。', ok:'削除', danger:true});
+  const yes = await ask({title:`${ids.length} 件の学習データを削除しますか？`, message:'写真と台数がこの端末から削除され、AIの学習にも使われなくなります。元に戻せません。', ok:'削除', danger:true});
   if (!yes) return;
   let n = 0; $('#delSel').disabled = true; $('#delSel').textContent = '削除しています…';
   for (const id of ids){ try { await Data.delSample(id); selected.delete(id); n++; } catch(e){ toast(writeError(e)); break; } }
@@ -1135,7 +1043,7 @@ function renderSettings(){
   $('#setBody').innerHTML = `
     <div class="section-h"><span>カウントする場所（${locs.length}/5）</span></div>
     <div class="group icons">${locRows}${addRow}</div>
-    <p class="footnote">「基準」に通常あるべき台数を入れておくと、ズレたときに赤く知らせます（空欄でも可）。設定もサイトに保存され、全員に反映されます。</p>
+    <p class="footnote">「基準」に通常あるべき台数を入れておくと、ズレたときに赤く知らせます（空欄でも可）。設定もこの端末に保存されます。</p>
 
     <div class="section-h"><span>AIに数えさせるもの</span></div>
     <div class="group"><textarea class="textarea" id="targetText" rows="3" aria-label="AIに数えさせるもの" ${dis}>${esc(settings.target)}</textarea></div>
@@ -1152,7 +1060,7 @@ function renderSettings(){
     <div class="group icons">
       ${Data.downloads || Data.mode === 'local' ? `<button class="row link" id="expJson">${tile(0, ICON.down)}<div class="row-main"><div class="row-title">バックアップを書き出す</div><div class="row-sub">写真・学習データを含むJSON</div></div></button>
       <button class="row link" id="expCsv">${tile(1, ICON.doc)}<div class="row-main"><div class="row-title">記録をCSVで書き出す</div><div class="row-sub">Excel・Numbersで開けます</div></div></button>` : ''}
-      <button class="row link" id="impJson" ${dis}>${tile(0, ICON.up)}<div class="row-main"><div class="row-title">データを読み込む</div><div class="row-sub">以前のバックアップ（JSON）をサイトに取り込む</div></div></button>
+      <button class="row link" id="impJson" ${dis}>${tile(0, ICON.up)}<div class="row-main"><div class="row-title">データを読み込む</div><div class="row-sub">以前のバックアップ（JSON）をこの端末に取り込む</div></div></button>
       <button class="row danger" id="wipe" ${dis}>${tile(4, ICON.trash)}<div class="row-main"><div class="row-title">すべての記録を削除</div></div></button>
     </div>
     <p class="footnote">${Data.mode === 'cloud' ? '写真はAIの手本として縮小してサイトに保存されます。AIに数えさせるときは、開いている人の Claude の利用枠を使います（初回に許可を求められます）。' : '写真と記録はこのブラウザの中にだけ保存され、外部には送信されません。ブラウザのデータを消すと失われるため、ときどきバックアップを書き出してください。'}</p>`;
@@ -1177,7 +1085,7 @@ function renderSettings(){
   if ($('#expCsv')) $('#expCsv').onclick = exportCsv;
   $('#impJson').onclick = () => { const i = $('#importInput'); i.value = ''; i.click(); };
   $('#wipe').onclick = async () => {
-    const yes = await ask({title:'すべての記録を削除しますか？', message:`記録と学習データ ${samples.length} 件をサイトから削除します。元に戻せません。`, ok:'すべて削除', danger:true});
+    const yes = await ask({title:'すべての記録を削除しますか？', message:`記録と学習データ ${samples.length} 件をこの端末から削除します。元に戻せません。`, ok:'すべて削除', danger:true});
     if (!yes) return;
     const ids = samples.map(s => s.id); let n = 0;
     toast('削除しています…');
@@ -1233,7 +1141,7 @@ $('#importInput').onchange = async e => {
     const s = {
       id: raw.id, locId: String(raw.locId), date: String(raw.date), ts: Number(raw.ts) || Date.now(), count: raw.count,
       det: typeof raw.det === 'number' ? raw.det : null, detSrc: raw.detSrc || (typeof raw.det === 'number' ? 'tf' : null),
-      emb: null, img: raw.img || raw.thumb || null,
+      emb: null, emb2: Array.isArray(raw.emb2) ? raw.emb2 : null, img: raw.img || raw.thumb || null,
       estimate: raw.estimate ?? null, method: raw.method && METHODS[raw.method] ? raw.method : null, trainOnly: !!raw.trainOnly
     };
     if (s.img){ try { const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = s.img; }); s.emb = fingerprint(im); } catch(_){ s.img = null; } }
