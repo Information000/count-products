@@ -164,7 +164,25 @@ button.row:disabled{opacity:.4}
 .photo-empty .big-ic{width:56px;height:56px;color:var(--blue);margin:0 auto 8px;display:block}
 .photo-empty p{margin:0 0 16px;color:var(--label2);font-size:15px}
 .photo-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-#capImg{display:block;width:100%;height:auto;max-height:52vh;object-fit:contain;background:var(--photo-bg)}
+/* viewfinder: always a dark camera surface, in both themes */
+.viewer{position:relative;margin:8px 16px 0;border-radius:14px;overflow:hidden;background:#000000;aspect-ratio:3/4;max-height:62vh;max-width:calc(100% - 32px);margin-left:auto;margin-right:auto}
+@media (min-width:500px){.viewer{aspect-ratio:4/3}}
+.viewer video,#capImg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000000;display:block}
+.viewer-msg{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:12px;color:rgba(255,255,255,.82);text-align:center;padding:24px 28px 96px;font-size:15px;line-height:1.5}
+.viewer-msg svg{width:46px;height:46px;color:rgba(255,255,255,.7)}
+.viewer-busy{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;background:rgba(0,0,0,.6);color:#ffffff;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:500;white-space:nowrap;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.spinner.light{border-color:rgba(255,255,255,.3);border-top-color:#ffffff;width:16px;height:16px;border-width:2px}
+.viewer-bar{position:absolute;left:0;right:0;bottom:0;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:16px 18px 18px;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.5))}
+.shutter{grid-column:2;width:68px;height:68px;border-radius:50%;background:#ffffff;box-shadow:0 0 0 4px rgba(0,0,0,.4),0 0 0 7px #ffffff;transition:transform .1s}
+.shutter:active{transform:scale(.92)}
+.vbtn{grid-column:1;justify-self:start;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.22);color:#ffffff;display:grid;place-items:center;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.vbtn svg{width:22px;height:22px}
+.retake{grid-column:2;height:38px;padding:0 20px;border-radius:999px;background:rgba(255,255,255,.92);color:#000000;font-weight:600;font-size:15px;display:inline-flex;align-items:center;gap:6px}
+.retake svg{width:16px;height:16px}
+.flash{position:absolute;inset:0;background:#ffffff;opacity:0;pointer-events:none}
+.flash.go{animation:flash .35s ease-out}
+@keyframes flash{0%{opacity:.85}100%{opacity:0}}
+.fix-line{display:flex;align-items:center;gap:8px;margin:0 16px 14px;padding:9px 12px;border-radius:10px;background:var(--blue-tint);color:var(--blue);font-size:13px;font-weight:500;line-height:1.4}
 .photo-retake{position:absolute;right:10px;top:10px;height:30px;padding:0 12px;border-radius:999px;background:rgba(0,0,0,.5);color:#ffffff;font-size:13px;font-weight:600;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .spinner{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--fill);border-top-color:var(--label2);animation:spin .8s linear infinite;flex:none}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -344,38 +362,34 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
     <div class="grabber"></div>
     <div class="sheet-nav"><button class="nav-btn" id="capCancel" data-close>キャンセル</button><div class="sheet-title" id="capTitle"></div><span></span></div>
     <div class="sheet-body" id="capBody">
-      <div class="photo">
-        <div class="photo-empty" id="capEmpty">
-          <svg class="big-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.6l1.4-2h7l1.4 2h1.6A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.5" r="3.6"/></svg>
-          <p>端末がすべて写るように、毎回同じ位置・角度で撮影してください</p>
-          <div class="photo-actions">
-            <button class="btn-filled" id="btnShoot">撮影する</button>
-            <button class="btn-tinted" id="btnPick">写真を選ぶ</button>
-          </div>
+      <div class="viewer" id="viewer">
+        <video id="camVideo" playsinline muted autoplay hidden></video>
+        <img id="capImg" alt="撮影した写真とAIが見つけた端末" hidden>
+        <div class="viewer-msg" id="viewerMsg"></div>
+        <div class="flash" id="flash"></div>
+        <div class="viewer-busy" id="viewerBusy" hidden><span class="spinner light"></span><span>AIが台数を数えています…</span></div>
+        <div class="viewer-bar">
+          <button class="vbtn" id="btnPick" aria-label="写真を選ぶ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M21 15l-5-5-8 9"/></svg></button>
+          <button class="shutter" id="btnShoot" aria-label="撮影する" hidden></button>
+          <button class="retake" id="btnRetake" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v6h6"/><path d="M20 12A8 8 0 0 0 5.5 7.3L4 10"/><path d="M4 12a8 8 0 0 0 14.5 4.7"/></svg>撮り直す</button>
         </div>
-        <img id="capImg" alt="撮影した写真" hidden>
-        <button class="photo-retake" id="btnRetake" hidden>撮り直す</button>
       </div>
 
-      <div id="countBlock">
-        <div class="section-h"><span id="capCountHead">目視で数えた台数（AIに教える正解）</span></div>
-        <div class="group">
-          <div class="stepper">
-            <button class="step-btn" id="btnMinus" aria-label="1台減らす"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
-            <input class="count-input" id="capCount" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="–" aria-label="台数">
-            <button class="step-btn" id="btnPlus" aria-label="1台増やす"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
-          </div>
-          <div class="unit-label">台</div>
+      <div class="section-h"><span>AIの判定</span></div>
+      <div class="group" id="capAi"></div>
+
+      <div class="section-h"><span id="capCountHead">確定する台数</span></div>
+      <div class="group">
+        <div class="stepper">
+          <button class="step-btn" id="btnMinus" aria-label="1台減らす"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+          <input class="count-input" id="capCount" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="–" aria-label="台数">
+          <button class="step-btn" id="btnPlus" aria-label="1台増やす"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
         </div>
-        <p class="footnote" id="capNote"></p>
+        <div class="unit-label">台</div>
       </div>
+      <p class="footnote" id="capNote"></p>
 
-      <div id="aiBlock">
-        <div class="section-h"><span id="capAiHead">AIの答え合わせ</span></div>
-        <div class="group" id="capAi"></div>
-      </div>
-
-      <button class="btn-primary" id="btnConfirm">撮影してAIに学習させる</button>
+      <button class="btn-primary" id="btnConfirm">撮影する</button>
     </div>
   </div>
 </div>
@@ -441,6 +455,7 @@ const ICON = {
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 20h14"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.6l1.4-2h7l1.4 2h1.6A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.5" r="3.6"/></svg>',
   cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.1 9.2 4.5 4.5 0 0 0 7 18z"/></svg>',
   brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>'
 };
@@ -879,22 +894,22 @@ function renderLearn(){
   const allReady = ps.length && ps.every(p => p.key === 'ready');
   const total = samples.filter(s => s.det != null || s.emb).length;
   const where = Data.mode === 'github' ? 'GitHub' : 'この端末';
-  const title = allReady ? 'AIは実用レベルです' : '目視の台数でAIを学習させましょう';
+  const title = allReady ? 'AIは実用レベルです' : 'AIが判定し、目視の修正で学習します';
   const sub = allReady
-    ? '撮影すると推定値が自動入力されます。合っているか確認して確定してください。'
-    : `${where}に蓄積された写真と正解の台数（現在 ${total} 件）を手本にして、AIが数えます。毎日続けるほど正確になります。`;
+    ? '撮影するとAIが台数を判定します。合っているか確認して確定してください。'
+    : `${where}に蓄積された写真と目視の台数（現在 ${total} 件）から、AIの数え方のクセや似た写真を学習します。`;
   const rows = locs.map((l, i) => {
     const p = ps[i];
     return `<div class="learn-loc"><span>${esc(l.name)}</span><span class="muted">学習 ${p.n}件${p.acc != null ? ` · 一致率 ${Math.round(p.acc*100)}%` : ''}</span></div>`;
   }).join('');
   $('#learnCard').innerHTML = `
     <div class="learn-top"><div class="ai-icon">${ICON.sparkle}</div><div class="row-main"><div class="learn-title">${title}</div><div class="learn-sub">${sub}</div></div></div>
-    ${allReady ? '' : `<div class="steps"><div><b>1</b>撮影する</div><div><b>2</b>目視で数えて入力</div><div><b>3</b>AIに学習させる</div></div>`}
+    <div class="steps"><div><b>1</b>撮影する</div><div><b>2</b>AIが自動で判定</div><div><b>3</b>違えば直して確定</div></div>
     ${rows}
     <button class="row link" id="learnPast" style="border-top:.5px solid var(--sep)" ${Data.mode === 'cloud' && !Data.canWrite ? 'disabled' : ''}>${tile(3, ICON.photo)}<div class="row-main"><div class="row-title">過去の写真でも学習させる</div><div class="row-sub">撮影済みの写真と台数を追加（締めの合計には含みません）</div></div>${ICON.chev}</button>`;
   $('#learnNote').textContent = allReady
     ? '並べ方やカメラ位置を変えた場合は精度が下がることがあります。その場合も目視の台数を入力すれば再び学習します。'
-    : 'AIの精度が十分に上がるまでは、AIの答えは目視の台数を入力した後に表示されます（先入観なく数えるため）。';
+    : '初めのうちはAIの判定がずれることがあります。そのときは目視で数えた台数に直して確定してください。直した記録が増えるほど、判定が正確になります。';
   $('#learnPast').onclick = async () => {
     const id = await pickLocation('どの場所の写真ですか？', '選んだ場所の学習データとして追加します。締めの合計には含まれません。');
     if (id) setTimeout(() => openCapture(id, true), 350);
@@ -908,149 +923,260 @@ document.querySelectorAll('.sheet').forEach(sh => sh.addEventListener('click', e
   if (e.target === sh || e.target.closest('[data-close]')) closeSheet(sh);
 }));
 
+/* ---------- camera ---------- */
+const Cam = {
+  stream: null,
+  supported: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+  async start(){
+    if (!this.supported) throw {name:'Unsupported'};
+    if (!this.stream){
+      this.stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1440}}});
+    }
+    const v = $('#camVideo');
+    v.muted = true; v.setAttribute('playsinline', ''); v.srcObject = this.stream;
+    await v.play().catch(() => {});
+  },
+  stop(){
+    if (this.stream){ this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+    const v = $('#camVideo'); if (v) v.srcObject = null;
+  },
+  grab(){
+    const v = $('#camVideo'); if (!v.videoWidth) return null;
+    const k = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    return c;
+  }
+};
+
+// state: 'starting' | 'live' | 'photo' | 'nocam'
+function setViewer(state, msg){
+  $('#camVideo').hidden = state !== 'live';
+  $('#capImg').hidden = state !== 'photo';
+  const m = $('#viewerMsg');
+  m.hidden = !(state === 'starting' || state === 'nocam');
+  if (state === 'starting') m.innerHTML = `${ICON.camera}<span>カメラを起動しています…</span>`;
+  if (state === 'nocam'){
+    const lib = cap && cap.trainOnly;
+    m.innerHTML = `${ICON.camera}<span>${esc(msg || '')}</span><button class="btn-filled" id="btnNative">${lib ? '写真を選ぶ' : 'カメラで撮影する'}</button>`;
+    $('#btnNative').onclick = lib ? pickLibrary : pickCamera;
+  }
+  $('#btnShoot').hidden = state !== 'live';
+  $('#btnRetake').hidden = state !== 'photo';
+  $('#btnPick').hidden = state === 'photo';
+  if (state !== 'photo') $('#viewerBusy').hidden = true;
+}
+async function startLive(){
+  const my = cap; if (!my) return;
+  setViewer('starting');
+  try {
+    await Cam.start();
+    if (cap !== my || my.photo){ if (!cap || cap.photo) Cam.stop(); return; }
+    setViewer('live');
+  } catch(e){
+    if (cap !== my) return;
+    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+    setViewer('nocam', denied
+      ? 'カメラの使用が許可されていません。ブラウザの設定でこのサイトのカメラを許可するか、下のボタンで撮影してください。'
+      : 'このブラウザではページ内のカメラを使えません。下のボタンで撮影してください。');
+  }
+}
+
 /* ---------- capture ---------- */
 function openCapture(locId, trainOnly){
   const l = locById(locId); if (!l) return;
-  if (Data.mode === 'cloud' && !Data.canWrite){ toast('閲覧のみの権限のため記録できません'); return; }
-  const ph = phaseOf(locId).key;
-  cap = {locId, trainOnly: !!trainOnly, photo:false, img:null, emb:null, det:null, note:'', est:null, aiState:'idle', phase:ph, revealed: ph === 'ready', ctl:null, saving:false};
+  cap = {locId, trainOnly: !!trainOnly, photo:false, img:null, emb:null, det:null, detSrc:null, boxes:[], est:null, aiState:'idle', userEdited:false, saving:false};
   $('#capTitle').textContent = (trainOnly ? '学習：' : '') + l.name;
-  const learning = ph !== 'ready';
-  $('#capAiHead').textContent = learning ? 'AIの答え合わせ' : 'AIの推定';
-  $('#capCountHead').textContent = learning ? '目視で数えた台数（AIに教える正解）' : '目視でカウントした台数';
-  const body = $('#capBody'), btn = $('#btnConfirm');
-  if (learning){ body.insertBefore($('#countBlock'), $('#aiBlock')); }
-  else { body.insertBefore($('#aiBlock'), $('#countBlock')); }
-  body.appendChild(btn);
-  $('#capEmpty').hidden = false; $('#capImg').hidden = true; $('#capImg').removeAttribute('src'); $('#btnRetake').hidden = true;
   $('#capCount').value = '';
   renderAiCard(); updateConfirm();
-  body.scrollTop = 0;
+  $('#capBody').scrollTop = 0;
   openSheet($('#capSheet'));
+  if (AI.status !== 'offline') AI.ensure(); // 撮影までにAIの準備を始めておく
+  if (trainOnly) setViewer('nocam', '過去に撮った写真を選んでください。');
+  else startLive();
 }
-function closeCapture(){ if (cap && cap.ctl) cap.ctl.abort(); cap = null; }
+function closeCapture(){ Cam.stop(); cap = null; }
 $('#capSheet').addEventListener('click', e => { if (e.target === $('#capSheet') || e.target.closest('[data-close]')) closeCapture(); });
 function pickCamera(){ const i = $('#camInput'); i.value = ''; i.click(); }
 function pickLibrary(){ const i = $('#libInput'); i.value = ''; i.click(); }
-$('#btnShoot').onclick = pickCamera;
-$('#btnPick').onclick = pickLibrary;
-$('#btnRetake').onclick = () => cap && cap.trainOnly ? pickLibrary() : pickCamera();
-$('#camInput').onchange = e => { const f = e.target.files[0]; if (f) analyze(f); };
-$('#libInput').onchange = e => { const f = e.target.files[0]; if (f) analyze(f); };
 
-function loadImage(file){
-  return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = URL.createObjectURL(file); });
+function shoot(){
+  if (!cap) return;
+  const c = Cam.grab(); if (!c){ toast('カメラの準備ができていません。少し待ってからもう一度押してください'); return; }
+  const f = $('#flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+  Cam.stop();
+  analyzeCanvas(c);
 }
-async function analyze(file){
+$('#btnShoot').onclick = shoot;
+$('#btnPick').onclick = pickLibrary;
+$('#btnRetake').onclick = () => {
+  if (!cap) return;
+  Object.assign(cap, {photo:false, img:null, emb:null, det:null, detSrc:null, boxes:[], est:null, aiState:'idle', userEdited:false});
+  $('#capCount').value = '';
+  renderAiCard(); updateConfirm();
+  if (cap.trainOnly) setViewer('nocam', '過去に撮った写真を選んでください。'); else startLive();
+};
+async function fileToCanvas(file){
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
+  const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(img.src);
+  return c;
+}
+const onFile = async e => {
+  const f = e.target.files[0]; if (!f || !cap) return;
+  try { const c = await fileToCanvas(f); Cam.stop(); analyzeCanvas(c); }
+  catch(err){ toast('この写真は読み込めませんでした。別の写真をお試しください'); }
+};
+$('#camInput').onchange = onFile;
+$('#libInput').onchange = onFile;
+
+// Find devices: whole picture plus four overlapping zoomed tiles, then merge duplicates
+function overlap(a, b){
+  const x = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  const y = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  const inter = x * y; const small = Math.min(a.w * a.h, b.w * b.h) || 1;
+  return {iou: inter / (a.w * a.h + b.w * b.h - inter || 1), inSmall: inter / small};
+}
+async function detectBoxes(model, work){
+  const found = [];
+  const run = async (sx, sy, sw, sh) => {
+    const k = Math.min(1, 640 / Math.max(sw, sh));
+    const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    c.getContext('2d').drawImage(work, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    const preds = await model.detect(c, 100, 0.3);
+    preds.filter(p => TF_CLASSES.includes(p.class)).forEach(p => {
+      const [x, y, w, h] = p.bbox; found.push({x: sx + x / k, y: sy + y / k, w: w / k, h: h / k, score: p.score});
+    });
+    await new Promise(r => setTimeout(r, 0)); // 画面の操作を止めないよう一息つく
+  };
+  const W = work.width, H = work.height, tw = W * .6, th = H * .6;
+  await run(0, 0, W, H);
+  for (const [sx, sy] of [[0, 0], [W - tw, 0], [0, H - th], [W - tw, H - th]]) await run(sx, sy, tw, th);
+  found.sort((a, b) => b.score - a.score);
+  const keep = [];
+  for (const b of found){ if (keep.every(k => { const o = overlap(k, b); return o.iou < .4 && o.inSmall < .7; })) keep.push(b); }
+  return keep;
+}
+function showPhoto(work, boxes){
+  const c = document.createElement('canvas'); c.width = work.width; c.height = work.height;
+  const g = c.getContext('2d'); g.drawImage(work, 0, 0);
+  const lw = Math.max(2, work.width / 260), fs = Math.max(13, work.width / 38);
+  boxes.forEach((b, i) => {
+    g.lineWidth = lw; g.strokeStyle = '#0a84ff'; g.fillStyle = 'rgba(10,132,255,.14)';
+    g.beginPath(); if (g.roundRect) g.roundRect(b.x, b.y, b.w, b.h, lw * 2); else g.rect(b.x, b.y, b.w, b.h); g.fill(); g.stroke();
+    const r = fs * .8; g.fillStyle = '#0a84ff'; g.beginPath(); g.arc(b.x + r, b.y + r, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffffff'; g.font = `600 ${fs}px -apple-system,system-ui,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(i + 1), b.x + r, b.y + r + 1);
+  });
+  $('#capImg').src = c.toDataURL('image/jpeg', .85);
+  setViewer('photo');
+}
+async function analyzeCanvas(src){
   if (!cap) return; const my = cap;
-  if (my.ctl) my.ctl.abort();
-  let work;
-  try {
-    const img = await loadImage(file);
-    const sc = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
-    work = document.createElement('canvas'); work.width = Math.round(img.naturalWidth * sc); work.height = Math.round(img.naturalHeight * sc);
-    work.getContext('2d').drawImage(img, 0, 0, work.width, work.height);
-    URL.revokeObjectURL(img.src);
-  } catch(e){ toast('この写真は読み込めませんでした。別の写真をお試しください'); return; }
-  if (cap !== my) return;
-  // stored copy: small enough for the site database
+  let work = src;
+  const k = Math.min(1, 1280 / Math.max(src.width, src.height));
+  if (k < 1){ work = document.createElement('canvas'); work.width = Math.round(src.width * k); work.height = Math.round(src.height * k); work.getContext('2d').drawImage(src, 0, 0, work.width, work.height); }
   const s2 = Math.min(1, 560 / Math.max(work.width, work.height));
   const sm = document.createElement('canvas'); sm.width = Math.round(work.width * s2); sm.height = Math.round(work.height * s2);
   sm.getContext('2d').drawImage(work, 0, 0, sm.width, sm.height);
-  my.img = sm.toDataURL('image/jpeg', .68);
-  my.emb = fingerprint(work);
-  my.photo = true; my.det = null; my.detSrc = null; my.emb2 = null; my.note = ''; my.est = estimate(my.locId, {det:null, emb:my.emb});
-  $('#capImg').src = my.img; $('#capImg').hidden = false; $('#capEmpty').hidden = true; $('#btnRetake').hidden = false;
+  Object.assign(my, {photo:true, img: sm.toDataURL('image/jpeg', .68), emb: fingerprint(work), det:null, detSrc:null, boxes:[], err:''});
+  my.est = estimate(my.locId, {det:null, emb:my.emb});
+  showPhoto(work, []);
   if (AI.status !== 'offline'){
-    my.aiState = 'busy'; renderAiCard(); updateConfirm();
+    my.aiState = 'busy'; $('#viewerBusy').hidden = false; renderAiCard(); updateConfirm();
     try {
       const model = await withTimeout(AI.ensure(), 45000);
       if (!model) throw new Error('no model');
       if (cap !== my) return;
-      await new Promise(r => setTimeout(r, 30)); // 画面を一度描き直してから重い処理に入る
-      const small = document.createElement('canvas'); const k = Math.min(1, 640 / Math.max(work.width, work.height));
-      small.width = Math.round(work.width * k); small.height = Math.round(work.height * k);
-      small.getContext('2d').drawImage(work, 0, 0, small.width, small.height);
-      const preds = await withTimeout(model.detect(small, 100, 0.35), 20000);
+      await new Promise(r => setTimeout(r, 30));
+      const boxes = await withTimeout(detectBoxes(model, work), 30000);
       if (cap !== my) return;
-      my.det = preds.filter(p => TF_CLASSES.includes(p.class)).length; my.detSrc = 'tf';
-      my.aiState = 'done'; my.est = estimate(my.locId, {det:my.det, detSrc:'tf', emb:my.emb});
-    } catch(e){ if (cap !== my) return; my.aiState = 'error'; my.err = 'AIの数えが間に合いませんでした。似た写真からの推定で続けます。台数の入力と学習はそのまま行えます。'; }
+      my.boxes = boxes; my.det = boxes.length; my.detSrc = 'tf'; my.aiState = 'done';
+      my.est = estimate(my.locId, {det:my.det, detSrc:'tf', emb:my.emb});
+      showPhoto(work, boxes);
+    } catch(e){
+      if (cap !== my) return;
+      my.aiState = 'error'; my.err = 'AIの判定が間に合いませんでした。似た写真からの推定で表示しています。';
+    }
+    if (cap === my) $('#viewerBusy').hidden = true;
   } else my.aiState = 'done';
   if (cap !== my) return;
-  if (my.phase === 'ready' && my.est && $('#capCount').value === '') $('#capCount').value = my.est.value;
+  if (my.est && !my.userEdited) $('#capCount').value = my.est.value;
   renderAiCard(); updateConfirm();
 }
+
 function renderAiCard(){
-  const el = $('#capAi');
-  if (!cap) return;
+  const el = $('#capAi'); if (!cap) return;
   if (!cap.photo){
-    const st = AI.status !== 'offline' ? 'AIが写真の端末を検出して数え、過去の正解で補正します。' : AI.status === 'loading' ? 'AIを準備しています…' : 'AIが使えないため、似た写真の台数から推定します。';
-    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-text">写真を撮ると推定が表示されます。<br><span class="muted">${st}</span></div></div>`; return;
+    const st = AI.status === 'offline' ? 'AIのモデルを読み込めないため、似た写真の台数から推定します。' : 'AIが写真の中の端末を見つけて数え、過去の目視の台数で補正します。';
+    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-text">撮影すると、AIが自動で台数を判定します。<br><span class="muted">${st}</span></div></div>`; return;
   }
-  if (cap.aiState === 'busy' && cap.revealed){
-    el.innerHTML = `<div class="ai-row"><div class="spinner"></div><div class="ai-text muted">AIが写真の端末を数えています…</div></div>`; return;
-  }
-  if (!cap.revealed){
-    const bg = cap.aiState === 'busy' ? '<br><span class="muted">AIは裏で数えています。</span>' : '';
-    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-text">AIの答えはまだ表示していません。<br><span class="muted">先入観なく数えるため、目視の台数を入力すると答え合わせが表示されます。</span>${bg}</div></div>`; return;
+  if (cap.aiState === 'busy'){
+    el.innerHTML = `<div class="ai-row"><span class="spinner"></span><div class="ai-text muted">AIが写真の端末を数えています…${AI.tf ? '' : '<br>初回はAIの準備に少し時間がかかります'}</div></div>`; return;
   }
   const e = cap.est;
-  const errLine = cap.aiState === 'error' ? `<div class="ai-meta warn">${esc(cap.err || '')}</div>` : '';
+  const errLine = cap.aiState === 'error' ? `<div class="ai-meta warn">${esc(cap.err)}</div>` : '';
   if (!e){
-    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-text">まだ推定できるだけのデータがありません。</div><div class="ai-meta">確定すると、この写真と台数が最初の手本になります。</div>${errLine}</div></div>`; return;
+    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-text">まだ判定できません。</div><div class="ai-meta">目視で数えた台数を入力して確定してください。この写真が最初の手本になります。</div>${errLine}</div></div>`; return;
   }
   const st = e.stats;
-  const meta = st
-    ? `過去の誤差 平均±${st.mae.toFixed(1)}台 · 一致率 ${Math.round(st.acc*100)}%（${st.n}件で検証）`
-    : `学習データ ${e.n}件 · まだ参考値です`;
-  const noteLine = cap.note ? `<div class="ai-meta">AIのメモ：${esc(cap.note)}</div>` : '';
-  if (cap.phase !== 'ready'){
-    const h = parseInt($('#capCount').value, 10); const d = e.value - h;
-    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-label">${METHODS[e.method].label}</div><div class="ai-text">${d === 0 ? '<span class="ok">AIの推定と一致しました</span>' : `<span class="warn">AIは ${Math.abs(d)} 台${d > 0 ? '多く' : '少なく'}数えています</span>`}</div><div class="ai-meta">確定すると、あなたが数えた台数が正解として学習されます</div>${noteLine}${errLine}</div></div>
-      <div class="cmp"><div><span>目視（正解）</span><b>${h}台</b></div><div><span>AIの推定</span><b>${e.value}台</b></div>${cap.det != null && cap.det !== e.value ? `<div><span>AIの素の数え</span><b>${cap.det}台</b></div>` : ''}</div>`;
-    return;
-  }
-  el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-label">${METHODS[e.method].label}</div><div class="ai-num">${e.value}<small>台</small></div><div class="ai-meta">${meta}</div>${noteLine}${errLine}</div><button class="btn-tinted sm" id="btnUseAi">この値を入力</button></div>`;
-  $('#btnUseAi').onclick = () => { $('#capCount').value = e.value; updateConfirm(); };
+  const meta = st ? `過去の誤差 平均±${st.mae.toFixed(1)}台 · 一致率 ${Math.round(st.acc*100)}%（${st.n}件で検証）` : `学習データ ${e.n}件 · 学習中のため参考値です`;
+  let detLine = '';
+  if (cap.det != null) detLine = `<div class="ai-meta">写真から ${cap.det} 個を検出（青枠）${cap.det !== e.value ? `、過去の傾向で ${e.value} 台に補正` : ''}</div>`;
+  const v = parseInt($('#capCount').value, 10);
+  const fixed = cap.userEdited && !isNaN(v) && v !== e.value
+    ? `<div class="fix-line">目視で修正：AI ${e.value}台 → ${v}台。この差をAIが学習します</div>` : '';
+  el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-label">${METHODS[e.method].label}</div><div class="ai-num">${e.value}<small>台</small></div><div class="ai-meta">${meta}</div>${detLine}${errLine}</div></div>${fixed}`;
 }
 function updateConfirm(){
   if (!cap) return;
   const v = $('#capCount').value.trim(); const ok = /^\d+$/.test(v);
-  if (cap.phase !== 'ready' && cap.photo && ok && !cap.revealed) cap.revealed = true;
-  renderAiCard();
   const b = $('#btnConfirm');
-  if (!cap.photo){ b.textContent = cap.trainOnly ? '写真を選んでAIに学習させる' : '撮影してAIに学習させる'; b.disabled = false; }
+  if (!cap.photo){ b.textContent = cap.trainOnly ? '写真を選ぶ' : '撮影する'; b.disabled = false; }
   else if (cap.saving){ b.textContent = '保存しています…'; b.disabled = true; }
-  else { b.textContent = 'AIに学習させる'; b.disabled = !ok; }
+  else if (!ok){ b.textContent = '台数を入力してください'; b.disabled = true; }
+  else if (cap.est && +v === cap.est.value){ b.textContent = `AIの判定どおり ${v} 台で確定`; b.disabled = false; }
+  else { b.textContent = `${v} 台で確定してAIに学習させる`; b.disabled = false; }
   const l = locById(cap.locId); const n = $('#capNote');
-  if (ok && l && l.expected != null){
+  if (ok && l && l.expected != null && +v !== l.expected){
     const d = +v - l.expected;
-    n.innerHTML = d === 0 ? `<span class="ok">基準台数 ${l.expected} 台と一致しています</span>` : `<span class="ng">基準台数 ${l.expected} 台より ${d>0?'+':''}${d} 台です。もう一度確認してください</span>`;
+    n.innerHTML = `<span class="ng">基準台数 ${l.expected} 台より ${d>0?'+':''}${d} 台です。もう一度確認してください</span>`;
+  } else if (!cap.photo){
+    n.textContent = '端末がすべて写るように、毎回同じ位置・角度で撮影してください。';
+  } else if (cap.est){
+    n.textContent = 'AIの判定が違っていたら、目視で数えた台数に直してから確定してください。直した内容をAIが学習します。';
   } else {
-    n.textContent = cap.photo ? 'AIの値ではなく、実際に数えた台数を入力してください。この値が「正解」として保存され、学習に使われます。' : '写真を撮ると、入力した台数を正解としてAIが学習します。';
+    n.textContent = '目視で数えた台数を入力してください。';
   }
 }
-$('#capCount').addEventListener('input', updateConfirm);
-$('#btnMinus').onclick = () => { const i = $('#capCount'); i.value = Math.max(0, (parseInt(i.value, 10) || 0) - 1); updateConfirm(); };
-$('#btnPlus').onclick = () => { const i = $('#capCount'); const v = parseInt(i.value, 10); i.value = isNaN(v) ? 1 : v + 1; updateConfirm(); };
+const edited = () => { if (cap){ cap.userEdited = true; renderAiCard(); updateConfirm(); } };
+$('#capCount').addEventListener('input', edited);
+$('#btnMinus').onclick = () => { const i = $('#capCount'); i.value = Math.max(0, (parseInt(i.value, 10) || 0) - 1); edited(); };
+$('#btnPlus').onclick = () => { const i = $('#capCount'); const v = parseInt(i.value, 10); i.value = isNaN(v) ? 1 : v + 1; edited(); };
 
 $('#btnConfirm').onclick = async () => {
   if (!cap) return;
-  if (!cap.photo){ cap.trainOnly ? pickLibrary() : pickCamera(); return; }
+  if (!cap.photo){
+    if (!$('#btnShoot').hidden) shoot();
+    else if (cap.trainOnly) pickLibrary(); else pickCamera();
+    return;
+  }
   const c = parseInt($('#capCount').value, 10); if (!(c >= 0)) return;
   const my = cap;
   const s = {
     id: uid(), locId: my.locId, date: dayKey(), ts: Date.now(), count: c,
-    det: my.det, detSrc: my.detSrc || null, emb: my.emb, emb2: my.emb2 || null, img: my.img,
-    estimate: my.est ? my.est.value : null, method: my.est ? my.est.method : null, trainOnly: my.trainOnly
+    det: my.det, detSrc: my.detSrc || null, emb: my.emb, img: my.img,
+    estimate: my.est ? my.est.value : null, method: my.est ? my.est.method : null,
+    corrected: !!(my.est && my.est.value !== c), trainOnly: my.trainOnly
   };
   my.saving = true; updateConfirm();
   try { await Data.putSample(s); }
   catch(e){ my.saving = false; updateConfirm(); toast(writeError(e)); return; }
-  closeSheet($('#capSheet')); cap = null;
-  const p = phaseOf(s.locId);
-  toast(s.estimate != null ? `学習しました：AI ${s.estimate}台 → 正解 ${s.count}台` : `学習しました（${locName(s.locId)} ${p.n}件目）`);
+  closeSheet($('#capSheet')); closeCapture();
+  toast(s.estimate == null ? `記録しました（${locName(s.locId)} の手本 ${phaseOf(s.locId).n} 件目）`
+    : s.corrected ? `目視の修正を学習しました：AI ${s.estimate}台 → ${s.count}台`
+    : `AIの判定どおり ${s.count}台で記録しました`);
 };
 
 /* ---------- 締め summary ---------- */
@@ -1359,7 +1485,8 @@ $('#importInput').onchange = async e => {
 
 /* ---------- init ---------- */
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
+  if (document.hidden){ Cam.stop(); return; }
+  if (cap && !cap.photo && !cap.trainOnly && $('#capSheet').classList.contains('open')) startLive();
   renderToday();
   if (Data.mode === 'github' && Date.now() - Data.lastSync > 60000) Data.sync();
 });
