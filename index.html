@@ -1,0 +1,1258 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>端末カウント</title>
+<meta name="apple-mobile-web-app-title" content="端末カウント">
+<style>
+/* Layout: iOS-style grouped lists under a large title, fixed translucent tab bar, bottom sheets for capture. */
+:root{
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+  --bg:#f2f2f7; --card:#ffffff; --label:#000000;
+  --label2:rgba(60,60,67,.6); --label3:rgba(60,60,67,.3);
+  --sep:rgba(60,60,67,.29); --fill:rgba(120,120,128,.12); --press:rgba(0,0,0,.06);
+  --blue:#007aff; --green:#34c759; --red:#ff3b30; --orange:#ff9500; --purple:#af52de; --pink:#ff2d55; --indigo:#5856d6;
+  --blue-tint:rgba(0,122,255,.12); --red-tint:rgba(255,59,48,.12); --green-tint:rgba(52,199,89,.15);
+  --bar:rgba(249,249,249,.86); --seg-on:#ffffff; --toast:rgba(30,30,30,.88); --toast-fg:#ffffff;
+  --sheet-bg:#f2f2f7; --alert-bg:rgba(242,242,247,.96); --scrim:rgba(0,0,0,.4); --photo-bg:#000000; --on-accent:#ffffff;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#000000; --card:#1c1c1e; --label:#ffffff;
+    --label2:rgba(235,235,245,.6); --label3:rgba(235,235,245,.3);
+    --sep:rgba(84,84,88,.65); --fill:rgba(118,118,128,.24); --press:rgba(255,255,255,.08);
+    --blue:#0a84ff; --green:#30d158; --red:#ff453a; --orange:#ff9f0a; --purple:#bf5af2; --pink:#ff375f; --indigo:#5e5ce6;
+    --blue-tint:rgba(10,132,255,.2); --red-tint:rgba(255,69,58,.18); --green-tint:rgba(48,209,88,.18);
+    --bar:rgba(22,22,22,.86); --seg-on:#636366; --toast:rgba(60,60,64,.94); --toast-fg:#ffffff;
+    --sheet-bg:#000000; --alert-bg:rgba(44,44,46,.96); --scrim:rgba(0,0,0,.55); --photo-bg:#000000; --on-accent:#ffffff;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#000000; --card:#1c1c1e; --label:#ffffff;
+  --label2:rgba(235,235,245,.6); --label3:rgba(235,235,245,.3);
+  --sep:rgba(84,84,88,.65); --fill:rgba(118,118,128,.24); --press:rgba(255,255,255,.08);
+  --blue:#0a84ff; --green:#30d158; --red:#ff453a; --orange:#ff9f0a; --purple:#bf5af2; --pink:#ff375f; --indigo:#5e5ce6;
+  --blue-tint:rgba(10,132,255,.2); --red-tint:rgba(255,69,58,.18); --green-tint:rgba(48,209,88,.18);
+  --bar:rgba(22,22,22,.86); --seg-on:#636366; --toast:rgba(60,60,64,.94); --toast-fg:#ffffff;
+  --sheet-bg:#000000; --alert-bg:rgba(44,44,46,.96); --scrim:rgba(0,0,0,.55); --photo-bg:#000000; --on-accent:#ffffff;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--label);font:17px/1.35 var(--font);letter-spacing:-.01em;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body.locked{overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+input,textarea{font:inherit;color:inherit}
+.muted{color:var(--label2)} .ok{color:var(--green)} .ng{color:var(--red)} .warn{color:var(--orange)}
+
+.app{max-width:720px;margin:0 auto;padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}
+.view{display:none}
+.view.active{display:block;animation:fade .28s ease}
+@keyframes fade{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+.lt-head{padding:36px 20px 6px}
+.lt-eyebrow{font-size:13px;font-weight:600;color:var(--label2);letter-spacing:.02em}
+.lt-head h1{font-size:34px;font-weight:700;margin:2px 0 0;line-height:1.15;text-wrap:balance}
+.lt-sub{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;padding:5px 11px;border-radius:999px;background:var(--fill);color:var(--label2)}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--orange)}
+.pill.ready .dot,.pill.cloud .dot{background:var(--green)}
+.pill.offline .dot,.pill.local .dot{background:var(--orange)}
+.pill.loading .dot{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+.section-h{font-size:13px;color:var(--label2);padding:24px 36px 7px;letter-spacing:.02em;display:flex;justify-content:space-between;gap:8px}
+.footnote{font-size:13px;color:var(--label2);padding:8px 36px 0;margin:0;line-height:1.5}
+.group{background:var(--card);border-radius:12px;margin:0 16px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:11px 16px;min-height:44px;position:relative;width:100%;text-align:left}
+.row+.row::before{content:"";position:absolute;top:0;right:0;left:16px;height:.5px;background:var(--sep)}
+.group.icons .row+.row::before{left:58px}
+button.row{transition:background .15s}
+button.row:active{background:var(--press)}
+button.row:disabled{opacity:.4}
+.row-main{flex:1;min-width:0}
+.row-title{font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-sub{font-size:13px;color:var(--label2);margin-top:2px;line-height:1.4}
+.row-val{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
+.row-val small{font-size:13px;font-weight:500;color:var(--label2);margin-left:2px}
+.row-detail{color:var(--label2);font-size:15px;white-space:nowrap}
+.row.link .row-title{color:var(--blue)}
+.row.danger .row-title{color:var(--red)}
+.chev{color:var(--label3);flex:none}
+.tile{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;color:var(--on-accent);font-weight:600;font-size:15px;flex:none}
+.tile svg{width:18px;height:18px}
+.badge{display:inline-block;font-size:12px;font-weight:600;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
+.badge.ng{background:var(--red-tint)}
+
+.hero{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;margin-top:16px}
+.hero-label{font-size:15px;color:var(--label2);font-weight:500}
+.hero-num{font-size:56px;font-weight:700;letter-spacing:-.03em;line-height:1.05;font-variant-numeric:tabular-nums}
+.hero-num .unit{font-size:20px;font-weight:600;color:var(--label2);margin-left:4px;letter-spacing:0}
+.hero-sub{font-size:15px;margin-top:4px;color:var(--label2)}
+.ring-wrap{position:relative;width:76px;height:76px;flex:none}
+.ring{width:76px;height:76px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:7}
+.ring-bg{stroke:var(--fill)}
+.ring-fg{stroke:var(--blue);stroke-linecap:round;transition:stroke-dashoffset .6s cubic-bezier(.32,.72,0,1)}
+.ring-label{position:absolute;inset:0;display:grid;place-items:center;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+
+.btn-primary{display:block;width:calc(100% - 32px);margin:24px 16px 0;height:50px;border-radius:12px;background:var(--blue);color:var(--on-accent);font-weight:600;font-size:17px;transition:opacity .15s,transform .1s}
+.btn-primary:active{transform:scale(.985);opacity:.85}
+.btn-primary:disabled{opacity:.3;cursor:default;transform:none}
+.btn-filled,.btn-tinted{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 18px;border-radius:999px;font-size:15px;font-weight:600}
+.btn-filled{background:var(--blue);color:var(--on-accent)}
+.btn-tinted{background:var(--blue-tint);color:var(--blue)}
+.btn-tinted.sm{height:30px;padding:0 12px;font-size:13px}
+.btn-filled:active,.btn-tinted:active{opacity:.7}
+
+.seg{display:flex;margin:10px 16px 0;background:var(--fill);border-radius:9px;padding:2px}
+.seg button{flex:1;height:30px;border-radius:7px;font-size:13px;font-weight:500;transition:background .2s}
+.seg button.on{background:var(--seg-on);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);font-weight:600}
+
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--bar);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--sep);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabbar-inner{display:flex;max-width:720px;margin:0 auto}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 0 6px;font-size:10px;font-weight:500;color:var(--label2)}
+.tab.active{color:var(--blue)}
+.tab svg{width:27px;height:27px}
+
+/* Sheets */
+.sheet{position:fixed;inset:0;z-index:50;pointer-events:none}
+.sheet::before{content:"";position:absolute;inset:0;background:var(--scrim);opacity:0;transition:opacity .35s}
+.sheet.open{pointer-events:auto}
+.sheet.open::before{opacity:1}
+.sheet-panel{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:640px;max-height:calc(100% - env(safe-area-inset-top,0px) - 18px);background:var(--sheet-bg);border-radius:14px 14px 0 0;transform:translateY(105%);transition:transform .48s cubic-bezier(.32,.72,0,1);display:flex;flex-direction:column;box-shadow:0 -8px 40px rgba(0,0,0,.18)}
+.sheet.open .sheet-panel{transform:none}
+.grabber{width:36px;height:5px;border-radius:3px;background:var(--label3);margin:6px auto 2px;flex:none}
+.sheet-nav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:6px 16px 8px;flex:none}
+.nav-btn{color:var(--blue);font-size:17px;justify-self:start}
+.nav-btn.right{justify-self:end;font-weight:600}
+.sheet-title{font-weight:600;font-size:17px;max-width:56vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(28px + env(safe-area-inset-bottom,0px));overscroll-behavior:contain}
+
+/* Alert */
+.alert{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .2s;padding:24px}
+.alert.open{opacity:1;pointer-events:auto}
+.alert-box{width:270px;max-width:100%;border-radius:14px;background:var(--alert-bg);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);text-align:center;overflow:hidden;transform:scale(1.08);transition:transform .25s cubic-bezier(.32,.72,0,1)}
+.alert.open .alert-box{transform:none}
+.alert-text{padding:19px 16px 16px}
+.alert-title{font-size:17px;font-weight:600}
+.alert-msg{font-size:13px;margin-top:4px;line-height:1.45;white-space:pre-line}
+.alert-btns{display:grid;grid-template-columns:1fr 1fr;border-top:.5px solid var(--sep)}
+.alert-btns button{height:44px;font-size:17px;color:var(--blue)}
+.alert-btns button+button{border-left:.5px solid var(--sep);font-weight:600}
+.alert-btns button.danger{color:var(--red)}
+
+/* Photo */
+.photo{margin:8px 16px 0;border-radius:14px;background:var(--card);overflow:hidden;position:relative;min-height:230px;display:grid;place-items:center}
+.photo-empty{text-align:center;padding:28px 20px}
+.photo-empty .big-ic{width:56px;height:56px;color:var(--blue);margin:0 auto 8px;display:block}
+.photo-empty p{margin:0 0 16px;color:var(--label2);font-size:15px}
+.photo-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+#capImg{display:block;width:100%;height:auto;max-height:52vh;object-fit:contain;background:var(--photo-bg)}
+.photo-retake{position:absolute;right:10px;top:10px;height:30px;padding:0 12px;border-radius:999px;background:rgba(0,0,0,.5);color:#ffffff;font-size:13px;font-weight:600;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.spinner{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--fill);border-top-color:var(--label2);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.ai-row{display:flex;align-items:center;gap:12px;padding:14px 16px}
+.ai-icon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,var(--indigo),var(--purple));color:var(--on-accent);flex:none}
+.ai-icon svg{width:19px;height:19px}
+.ai-main{flex:1;min-width:0}
+.ai-label{font-size:13px;color:var(--label2);font-weight:500}
+.ai-num{font-size:34px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.ai-num small{font-size:15px;color:var(--label2);font-weight:600;margin-left:3px}
+.ai-meta{font-size:12px;color:var(--label2);margin-top:2px;line-height:1.45}
+.ai-text{font-size:15px;line-height:1.45}
+.cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;padding:0 16px 14px}
+.cmp div{background:var(--bg);border-radius:10px;padding:8px 10px}
+.cmp span{font-size:11px;color:var(--label2);display:block}
+.cmp b{font-size:20px;font-variant-numeric:tabular-nums}
+
+.stepper{display:flex;align-items:center;justify-content:space-between;padding:14px 18px}
+.step-btn{width:56px;height:56px;border-radius:50%;background:var(--fill);color:var(--blue);display:grid;place-items:center;flex:none;transition:transform .1s}
+.step-btn:active{transform:scale(.92)}
+.step-btn svg{width:22px;height:22px}
+.count-input{width:140px;min-width:0;text-align:center;font-size:60px;font-weight:700;border:0;background:none;outline:none;font-variant-numeric:tabular-nums;letter-spacing:-.03em;padding:0;-moz-appearance:textfield}
+.count-input::placeholder{color:var(--label3)}
+.count-input::-webkit-outer-spin-button,.count-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.unit-label{text-align:center;color:var(--label2);font-size:13px;margin-top:-10px;padding-bottom:12px}
+
+.inp{border:0;background:none;outline:none;font-size:17px;width:100%;padding:0;min-width:0}
+.inp-num{width:64px;text-align:right;border:0;background:var(--fill);border-radius:8px;padding:5px 8px;font-size:15px;outline:none;font-variant-numeric:tabular-nums}
+.inp-num::placeholder{color:var(--label3)}
+.textarea{display:block;width:100%;border:0;background:none;outline:none;resize:vertical;min-height:72px;padding:12px 16px;font-size:16px;line-height:1.45}
+.mini-label{font-size:12px;color:var(--label2);white-space:nowrap}
+.del-btn{width:22px;height:22px;flex:none;color:var(--red)}
+.del-btn svg{width:22px;height:22px}
+.del-btn:disabled{opacity:.25}
+
+.learn-top{display:flex;align-items:center;gap:12px;padding:16px}
+.learn-title{font-size:17px;font-weight:600}
+.learn-sub{font-size:13px;color:var(--label2);margin-top:2px;line-height:1.45}
+.learn-loc{padding:10px 16px;position:relative;display:flex;justify-content:space-between;gap:8px;font-size:15px}
+.learn-loc::before{content:"";position:absolute;top:0;right:0;left:16px;height:.5px;background:var(--sep)}
+.learn-loc .muted{font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 16px 14px}
+.steps div{background:var(--bg);border-radius:10px;padding:8px 6px;text-align:center;font-size:12px;color:var(--label2);line-height:1.35}
+.steps b{display:block;font-size:15px;color:var(--blue);margin-bottom:2px}
+
+.thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--fill);flex:none}
+.dots{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.dots i{width:10px;height:10px;border-radius:50%;background:var(--fill);display:block}
+.dots i.ok{background:var(--green)} .dots i.ng{background:var(--red)} .dots i.near{background:var(--orange)}
+.bar{height:6px;border-radius:3px;background:var(--fill);overflow:hidden;margin-top:10px}
+.bar>span{display:block;height:100%;border-radius:3px;transition:width .5s}
+.acc-card{padding:14px 16px;margin-bottom:12px}
+.acc-top{display:flex;align-items:center;gap:12px}
+.acc-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.acc-stats div{background:var(--bg);border-radius:10px;padding:8px 10px;min-width:0}
+.acc-stats b{display:block;font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.acc-stats span{font-size:11px;color:var(--label2)}
+.empty{text-align:center;color:var(--label2);padding:48px 32px;font-size:15px;line-height:1.5}
+.empty svg{width:46px;height:46px;color:var(--label3);display:block;margin:0 auto 10px}
+
+.sel-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 36px 0;font-size:13px;color:var(--label2)}
+.sel-bar .links{display:flex;gap:16px}
+.sel-bar button{color:var(--blue);font-size:15px;font-weight:500}
+.check{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--label3);flex:none;display:grid;place-items:center;transition:background .15s,border-color .15s}
+.check svg{width:13px;height:13px;opacity:0}
+.check.on{background:var(--blue);border-color:var(--blue);color:var(--on-accent)}
+.check.on svg{opacity:1}
+.del-bar{position:fixed;left:0;right:0;bottom:calc(56px + env(safe-area-inset-bottom,0px));z-index:45;display:flex;justify-content:center;padding:10px max(16px, env(safe-area-inset-left,0px)) 10px max(16px, env(safe-area-inset-right,0px));background:var(--bar);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--sep)}
+body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))}
+.del-bar button{width:100%;max-width:688px;height:46px;border-radius:12px;background:var(--red);color:var(--on-accent);font-weight:600;font-size:17px}
+.del-bar button:disabled{opacity:.35}
+.chip-mini{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:999px;background:var(--fill);color:var(--label2);margin-left:6px;vertical-align:1px}
+
+.sum-total{text-align:center;padding:10px 0 4px}
+.sum-total .hero-num{font-size:64px}
+.sum-actions{margin:20px 16px 0}
+.sum-actions button{width:100%;height:46px;border-radius:12px;background:var(--card);color:var(--blue);font-weight:600;font-size:15px;display:flex;align-items:center;justify-content:center;gap:6px}
+.sum-actions button svg{width:18px;height:18px}
+.sum-text{margin:12px 16px 0;padding:12px 14px;border-radius:12px;background:var(--card);font-size:14px;line-height:1.55;white-space:pre-wrap;user-select:all;-webkit-user-select:all}
+
+.toast{position:fixed;left:50%;bottom:calc(98px + env(safe-area-inset-bottom,0px));transform:translate(-50%,16px);background:var(--toast);color:var(--toast-fg);padding:11px 18px;border-radius:999px;font-size:15px;font-weight:500;opacity:0;pointer-events:none;transition:opacity .25s,transform .35s cubic-bezier(.32,.72,0,1);z-index:90;max-width:calc(100% - 32px);text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media (min-width:700px){
+  .sheet-panel{bottom:auto;top:50%;border-radius:16px;transform:translateY(-46%) scale(.96);opacity:0;transition:transform .4s cubic-bezier(.32,.72,0,1),opacity .25s;max-height:88vh}
+  .sheet.open .sheet-panel{transform:translateY(-50%);opacity:1}
+  .grabber{visibility:hidden}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px)}</style>
+</head>
+<body>
+<div class="app">
+  <!-- 今日 -->
+  <section class="view active" id="view-today">
+    <header class="lt-head">
+      <div class="lt-eyebrow" id="todayDate"></div>
+      <h1>今日の締め</h1>
+      <div class="lt-sub">
+        <span class="pill loading" id="savePill"><span class="dot"></span><span>保存先を確認中…</span></span>
+        <span class="pill loading" id="aiPill"><span class="dot"></span><span>AI 確認中…</span></span>
+      </div>
+    </header>
+
+    <div class="group hero">
+      <div>
+        <div class="hero-label">本日の合計台数</div>
+        <div class="hero-num"><span id="totalNum">0</span><span class="unit">台</span></div>
+        <div class="hero-sub" id="heroSub"></div>
+      </div>
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle class="ring-bg" cx="32" cy="32" r="27"/><circle class="ring-fg" id="ringFg" cx="32" cy="32" r="27" stroke-dasharray="169.65" stroke-dashoffset="169.65"/></svg>
+        <div class="ring-label" id="ringLabel">0/0</div>
+      </div>
+    </div>
+
+    <div class="section-h"><span>場所</span><span>タップして撮影・学習</span></div>
+    <div class="group icons" id="locList"></div>
+    <p class="footnote" id="locNote">撮影したら、目視で数えた台数を入力してください。その台数が「正解」としてサイトに蓄積され、AIが学習します。</p>
+
+    <div class="section-h"><span>AIの学習</span></div>
+    <div class="group" id="learnCard"></div>
+    <p class="footnote" id="learnNote"></p>
+
+    <button class="btn-primary" id="btnClose" disabled>締めを完了する</button>
+  </section>
+
+  <!-- 履歴 -->
+  <section class="view" id="view-history">
+    <header class="lt-head">
+      <div class="lt-eyebrow">サイトに蓄積された記録</div>
+      <h1>履歴</h1>
+    </header>
+    <div class="seg" id="histSeg">
+      <button id="segRecords" data-seg="records" class="on">記録</button>
+      <button id="segData" data-seg="data">学習データ</button>
+      <button id="segAccuracy" data-seg="accuracy">AIの精度</button>
+    </div>
+    <div id="histBody"></div>
+    <div class="del-bar" id="delBar" hidden><button id="delSel" disabled>削除</button></div>
+  </section>
+
+  <!-- 設定 -->
+  <section class="view" id="view-settings">
+    <header class="lt-head">
+      <div class="lt-eyebrow">場所・AI・データ</div>
+      <h1>設定</h1>
+    </header>
+    <div id="setBody"></div>
+  </section>
+</div>
+
+<nav class="tabbar" aria-label="タブ">
+  <div class="tabbar-inner">
+    <button class="tab active" id="tabToday" data-view="today">
+      <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="19" height="19" rx="5"/><path d="M9.5 14.3l3.1 3.1 6-6.6"/></svg>
+      今日
+    </button>
+    <button class="tab" id="tabHistory" data-view="history">
+      <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="14" cy="14" r="9.5"/><path d="M14 8.5V14l3.8 2.4"/></svg>
+      履歴
+    </button>
+    <button class="tab" id="tabSettings" data-view="settings">
+      <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 8h18M5 14h18M5 20h18"/><circle cx="10" cy="8" r="2.4" fill="var(--bar)"/><circle cx="18" cy="14" r="2.4" fill="var(--bar)"/><circle cx="12" cy="20" r="2.4" fill="var(--bar)"/></svg>
+      設定
+    </button>
+  </div>
+</nav>
+
+<!-- Capture sheet -->
+<div class="sheet" id="capSheet" aria-hidden="true">
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="capTitle">
+    <div class="grabber"></div>
+    <div class="sheet-nav"><button class="nav-btn" id="capCancel" data-close>キャンセル</button><div class="sheet-title" id="capTitle"></div><span></span></div>
+    <div class="sheet-body" id="capBody">
+      <div class="photo">
+        <div class="photo-empty" id="capEmpty">
+          <svg class="big-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.6l1.4-2h7l1.4 2h1.6A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.5" r="3.6"/></svg>
+          <p>端末がすべて写るように、毎回同じ位置・角度で撮影してください</p>
+          <div class="photo-actions">
+            <button class="btn-filled" id="btnShoot">撮影する</button>
+            <button class="btn-tinted" id="btnPick">写真を選ぶ</button>
+          </div>
+        </div>
+        <img id="capImg" alt="撮影した写真" hidden>
+        <button class="photo-retake" id="btnRetake" hidden>撮り直す</button>
+      </div>
+
+      <div id="countBlock">
+        <div class="section-h"><span id="capCountHead">目視で数えた台数（AIに教える正解）</span></div>
+        <div class="group">
+          <div class="stepper">
+            <button class="step-btn" id="btnMinus" aria-label="1台減らす"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+            <input class="count-input" id="capCount" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="–" aria-label="台数">
+            <button class="step-btn" id="btnPlus" aria-label="1台増やす"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
+          </div>
+          <div class="unit-label">台</div>
+        </div>
+        <p class="footnote" id="capNote"></p>
+      </div>
+
+      <div id="aiBlock">
+        <div class="section-h"><span id="capAiHead">AIの答え合わせ</span></div>
+        <div class="group" id="capAi"></div>
+      </div>
+
+      <button class="btn-primary" id="btnConfirm">撮影してAIに学習させる</button>
+    </div>
+  </div>
+</div>
+
+<!-- Summary sheet -->
+<div class="sheet" id="sumSheet" aria-hidden="true">
+  <div class="sheet-panel" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="sheet-nav"><span></span><div class="sheet-title">締めの集計</div><button class="nav-btn right" id="sumDone" data-close>完了</button></div>
+    <div class="sheet-body" id="sumBody"></div>
+  </div>
+</div>
+
+<!-- Location picker -->
+<div class="sheet" id="actSheet" aria-hidden="true">
+  <div class="sheet-panel" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="sheet-nav"><button class="nav-btn" id="actCancel" data-close>キャンセル</button><div class="sheet-title" id="actTitle"></div><span></span></div>
+    <div class="sheet-body">
+      <p class="footnote" style="padding-top:0;padding-bottom:10px" id="actNote"></p>
+      <div class="group icons" id="actList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Alert -->
+<div class="alert" id="alert" role="alertdialog" aria-modal="true" aria-labelledby="alertTitle">
+  <div class="alert-box">
+    <div class="alert-text"><div class="alert-title" id="alertTitle"></div><div class="alert-msg" id="alertMsg"></div></div>
+    <div class="alert-btns"><button id="alertCancel">キャンセル</button><button id="alertOk">OK</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<input type="file" id="camInput" accept="image/*" capture="environment" hidden>
+<input type="file" id="libInput" accept="image/*" hidden>
+<input type="file" id="importInput" accept="application/json,.json" hidden>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const dayKey = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const fmtTime = ts => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtDay = k => { const [y,m,d] = k.split('-').map(Number); const dt = new Date(y, m-1, d); return `${m}月${d}日（${'日月火水木金土'[dt.getDay()]}）`; };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+const TINTS = ['var(--blue)','var(--green)','var(--orange)','var(--purple)','var(--pink)'];
+const ICON = {
+  chev: '<svg class="chev" viewBox="0 0 8 14" width="8" height="14" aria-hidden="true"><path d="M1 1l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  sparkle: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 2.5l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/><path d="M19 14.5l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg>',
+  minus: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M7 12h10" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="var(--green)"/><path d="M7 12h10M12 7v10" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>',
+  photo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M21 15l-5-5-8 9"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/></svg>',
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 20h14"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+  cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.1 9.2 4.5 4.5 0 0 0 7 18z"/></svg>',
+  brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>'
+};
+const tile = (i, txt) => `<span class="tile" style="background:${TINTS[i % TINTS.length]}">${txt ?? (i+1)}</span>`;
+
+let toastTimer;
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
+
+// iOS-style in-page confirm (browser dialogs are not available here)
+function ask({title, message = '', ok = 'OK', danger = false}){
+  return new Promise(res => {
+    const a = $('#alert');
+    $('#alertTitle').textContent = title; $('#alertMsg').textContent = message;
+    const okBtn = $('#alertOk'); okBtn.textContent = ok; okBtn.classList.toggle('danger', danger);
+    const done = v => { a.classList.remove('open'); okBtn.onclick = null; $('#alertCancel').onclick = null; res(v); };
+    okBtn.onclick = () => done(true); $('#alertCancel').onclick = () => done(false);
+    a.classList.add('open'); okBtn.focus();
+  });
+}
+
+function dataURLtoBlob(u){
+  const [h, b] = u.split(','); const mime = (h.match(/data:(.*?);/) || [])[1] || 'image/jpeg';
+  const bin = atob(b); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], {type: mime});
+}
+const canvasBlob = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q));
+
+/* ---------- settings ---------- */
+const DEFAULT_TARGET = '業務用の端末（スマートフォン・ハンディ端末・タブレット）。充電ケーブルや充電台そのものは数えない。';
+const DEFAULTS = () => ({
+  locations: [
+    {id:'a', name:'場所 A', expected:null},
+    {id:'b', name:'場所 B', expected:null},
+    {id:'c', name:'場所 C', expected:null}
+  ],
+  target: DEFAULT_TARGET
+});
+let settings = DEFAULTS();
+const locById = id => settings.locations.find(l => l.id === id);
+const locIndex = id => settings.locations.findIndex(l => l.id === id);
+const locName = id => { const l = locById(id); return l ? l.name : '（削除した場所）'; };
+
+/* ---------- local fallback storage (when opened outside claude.ai) ---------- */
+const Local = {
+  db: null,
+  async open(){
+    try {
+      this.db = await new Promise((res, rej) => {
+        const r = indexedDB.open('terminal-count-site', 1);
+        r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('samples')) r.result.createObjectStore('samples', {keyPath:'id'}); };
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      });
+    } catch(e){ this.db = null; }
+  },
+  req(mode, fn){
+    if (!this.db) return Promise.resolve(null);
+    return new Promise((res, rej) => { const t = this.db.transaction('samples', mode); const r = fn(t.objectStore('samples')); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); });
+  },
+  all(){ return this.req('readonly', s => s.getAll()).then(r => r || []); },
+  put(o){ return this.req('readwrite', s => s.put(o)); },
+  del(id){ return this.req('readwrite', s => s.delete(id)); }
+};
+
+/* ---------- data layer: site database (shared) or local fallback ---------- */
+const Data = {
+  mode: 'pending', db: null, canWrite: true, downloads: null,
+  async init(){
+    try {
+      if (window.claude && typeof claude.use === 'function'){
+        const db = await claude.use('db');
+        if (db){
+          this.db = db; this.mode = 'cloud';
+          try { const u = await claude.use('user'); if (u){ const c = await u.can('data.write'); this.canWrite = c !== false; } } catch(e){}
+        }
+        try { this.downloads = await claude.use('downloads'); } catch(e){}
+      }
+    } catch(e){}
+    if (this.mode !== 'cloud'){
+      this.mode = 'local'; await Local.open();
+      try { const s = JSON.parse(localStorage.getItem('tc-site-settings')); if (s && Array.isArray(s.locations) && s.locations.length) settings = Object.assign(DEFAULTS(), s); } catch(e){}
+    }
+  },
+  subscribe(){
+    if (this.mode === 'cloud'){
+      this.db.collection('samples').orderBy('ts', 'desc').limit(1000).onSnapshot(
+        snap => setSamples(snap.docs.map(d => Object.assign({id: d.id}, d.data()))),
+        e => { if (e.code !== 'revoked') toast('記録を読み込めませんでした。ページを開き直してください'); }
+      );
+      this.db.doc('config/settings').onSnapshot(s => {
+        if (!s.exists) return;
+        const d = s.data();
+        if (d && Array.isArray(d.locations) && d.locations.length){
+          settings = Object.assign(DEFAULTS(), JSON.parse(JSON.stringify(d)));
+          invalidate(); renderToday();
+          const a = document.activeElement;
+          if (currentView() === 'view-settings' && !(a && $('#setBody').contains(a) && /INPUT|TEXTAREA/.test(a.tagName))) renderSettings();
+        }
+      }, () => {});
+    } else {
+      Local.all().then(arr => setSamples(arr));
+    }
+  },
+  async putSample(s){
+    if (this.mode === 'cloud') await this.db.collection('samples').doc(s.id).set(s);
+    else { await Local.put(s); setSamples(samples.filter(x => x.id !== s.id).concat(s)); }
+  },
+  async delSample(id){
+    if (this.mode === 'cloud') await this.db.doc('samples/' + id).delete();
+    else { await Local.del(id); setSamples(samples.filter(x => x.id !== id)); }
+  },
+  async saveSettings(){
+    if (this.mode === 'cloud'){
+      try { await this.db.doc('config/settings').set(JSON.parse(JSON.stringify(settings))); }
+      catch(e){ toast(writeError(e)); }
+    } else { try { localStorage.setItem('tc-site-settings', JSON.stringify(settings)); } catch(e){} }
+  }
+};
+function writeError(e){
+  const c = e && e.code;
+  if (c === 'quota_exceeded') return 'サイトの保存容量がいっぱいです。履歴から古い記録を削除してください';
+  if (c === 'invalid_argument') return '保存する権限がありません（閲覧のみ）';
+  if (c === 'resource_exhausted') return '操作が多すぎます。少し待ってからもう一度お試しください';
+  return '保存できませんでした。通信状況を確認してもう一度お試しください';
+}
+
+/* ---------- state ---------- */
+let samples = [];
+let cap = null;
+let histSeg = 'records';
+let evalCache = {};
+const invalidate = () => { evalCache = {}; };
+function setSamples(arr){
+  samples = arr.filter(s => s && typeof s.count === 'number');
+  invalidate(); renderToday();
+  if (currentView() === 'view-history') renderHistory();
+  if (currentView() === 'view-settings') renderSettings();
+}
+
+/* ---------- AI (Claude reads the photo) ---------- */
+function loadScript(url){ return new Promise((res, rej) => { const s = document.createElement('script'); s.src = url; s.async = true; s.onload = res; s.onerror = () => rej(new Error(url)); document.head.appendChild(s); }); }
+const TF_CLASSES = ['cell phone', 'laptop', 'tv', 'remote'];
+const AI = {
+  fn: null, tf: null, kind: null, status: 'loading', maxImages: 1,
+  async init(){
+    try {
+      if (window.claude && typeof claude.use === 'function'){
+        const s = await claude.use('sample');
+        if (s){
+          const lim = await s.limits().catch(() => null);
+          if (lim && lim.images){ this.fn = s; this.maxImages = Math.max(1, lim.images.maxCount || 1); }
+        }
+      }
+    } catch(e){}
+    if (this.fn) this.kind = 'claude';
+    else {
+      // claude.ai の外（GitHub Pages など）では、端末内で動く画像認識モデルを使う
+      try {
+        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+        await tf.ready();
+        this.tf = await cocoSsd.load({base:'lite_mobilenet_v2'});
+        this.kind = 'tf';
+      } catch(e){ this.tf = null; }
+    }
+    this.status = (this.fn || this.tf) ? 'ready' : 'offline';
+    renderStatus();
+    if (cap && !cap.photo) renderAiCard();
+  }
+};
+
+// Small picture fingerprint for "similar photo" learning (no network needed)
+function fingerprint(src){
+  const mid = document.createElement('canvas'); mid.width = 128; mid.height = 96;
+  mid.getContext('2d').drawImage(src, 0, 0, 128, 96);
+  const c = document.createElement('canvas'); c.width = 16; c.height = 12;
+  const g = c.getContext('2d'); g.drawImage(mid, 0, 0, 16, 12);
+  const d = g.getImageData(0, 0, 16, 12).data;
+  const gray = [], hist = new Array(64).fill(0);
+  for (let i = 0; i < d.length; i += 4){
+    gray.push(.299*d[i] + .587*d[i+1] + .114*d[i+2]);
+    hist[(d[i]>>6)*16 + (d[i+1]>>6)*4 + (d[i+2]>>6)]++;
+  }
+  const m = avg(gray); let sd = 0; gray.forEach(y => sd += (y-m)**2); sd = Math.sqrt(sd/gray.length) || 1;
+  const hs = Math.sqrt(hist.reduce((a, b) => a + b*b, 0)) || 1;
+  const v = gray.map(y => (y-m)/sd).concat(hist.map(h => h/hs*4));
+  const n = Math.sqrt(v.reduce((a, b) => a + b*b, 0)) || 1;
+  return v.map(x => +(x/n).toFixed(4));
+}
+function dot(a, b){ let s = 0; for (let i = 0; i < a.length; i++) s += a[i]*b[i]; return s; }
+
+async function askClaude(locId, blob){
+  const l = locById(locId);
+  const maxRefs = Math.min(3, AI.maxImages - 1);
+  const refs = maxRefs > 0 ? samples.filter(s => s.locId === locId && s.img).sort((a, b) => b.ts - a.ts).slice(0, maxRefs).reverse() : [];
+  const images = refs.map(r => dataURLtoBlob(r.img)); images.push(blob);
+  const withDet = samples.filter(s => s.locId === locId && s.det != null && (s.detSrc || 'claude') === 'claude');
+  let tendency = '';
+  if (withDet.length >= 3){
+    const bias = avg(withDet.map(s => s.det - s.count));
+    if (Math.abs(bias) >= .3) tendency = `\n過去の傾向：あなたのこの場所での数え方は、正解より平均 ${Math.abs(bias).toFixed(1)} 台${bias > 0 ? '多め' : '少なめ'}でした。注意して数えてください。`;
+  }
+  const refText = refs.length
+    ? refs.map((r, i) => `画像${i+1}：同じ場所の過去の写真。人が目視で数えた正解は ${r.count} 台。`).join('\n') + `\n画像${refs.length+1}：今回数える写真。`
+    : '画像1：今回数える写真。';
+  const prompt =
+`店舗の締め作業で、写真に写っている端末の台数を数えます。
+場所：${l ? l.name : ''}
+数える対象：${settings.target || DEFAULT_TARGET}
+
+${refText}
+過去の写真は数え方の参考です。並べ方や見え方を比べて、今回の写真の台数を1台ずつ数えてください。重なって一部しか見えない端末も1台として数えます。${tendency}
+
+次のJSONだけを返してください：{"count": 整数, "note": "数え方の根拠を日本語40字以内"}`;
+  const res = await AI.fn.json(prompt, {images, modelTier:'default'});
+  const c = Number(res && res.count);
+  if (!isFinite(c)) throw {code:'invalid_json'};
+  return {count: Math.max(0, Math.round(c)), note: String((res && res.note) || '').slice(0, 80)};
+}
+
+/* ---------- learning: calibration + similar photos + model choice ---------- */
+function fitCalib(t){
+  const mx = avg(t.map(s => s.det)), my = avg(t.map(s => s.count));
+  let sxx = 0, sxy = 0;
+  t.forEach(s => { sxx += (s.det-mx)**2; sxy += (s.det-mx)*(s.count-my); });
+  if (t.length < 4 || sxx < 1e-9) return {a:1, b:my-mx};
+  const lam = 2; const a = (sxy + lam) / (sxx + lam);
+  return {a, b: my - a*mx};
+}
+const METHODS = {
+  detect: { label:'AIが写真を直接カウント', fn:(q) => q.det == null ? null : q.det },
+  calib:  { label:'AI＋過去の傾向で補正', fn:(q, tr) => {
+    if (q.det == null) return null;
+    const src = q.detSrc || 'claude';
+    const t = tr.filter(s => s.det != null && (s.detSrc || 'claude') === src); if (t.length < 2) return null;
+    const {a, b} = fitCalib(t); return a*q.det + b;
+  }},
+  knn:    { label:'似た写真の台数から推定', fn:(q, tr) => {
+    if (!q.emb) return null;
+    const t = tr.filter(s => s.emb && s.emb.length === q.emb.length); if (t.length < 3) return null;
+    const near = t.map(s => ({c:s.count, sim:dot(q.emb, s.emb)})).sort((x, y) => y.sim - x.sim).slice(0, 3);
+    let w = 0, v = 0; near.forEach(x => { const ww = Math.exp((x.sim - 1) * 15); w += ww; v += ww * x.c; });
+    return w ? v / w : null;
+  }},
+  blend:  { label:'総合判定', fn:(q, tr) => {
+    const a = METHODS.calib.fn(q, tr), b = METHODS.knn.fn(q, tr);
+    return (a == null || b == null) ? null : (a + b) / 2;
+  }}
+};
+function trainSet(locId){
+  return samples.filter(s => s.locId === locId && (s.det != null || s.emb)).sort((a, b) => b.ts - a.ts).slice(0, 200);
+}
+function getEval(locId){
+  if (evalCache[locId]) return evalCache[locId];
+  const all = trainSet(locId); const res = {};
+  for (const k of Object.keys(METHODS)){
+    let err = 0, hit = 0, n = 0;
+    for (const s of all){
+      const p = METHODS[k].fn(s, all.filter(x => x !== s));
+      if (p == null || !isFinite(p)) continue;
+      const r = Math.max(0, Math.round(p)); err += Math.abs(r - s.count); hit += (r === s.count) ? 1 : 0; n++;
+    }
+    res[k] = n ? {mae: err/n, acc: hit/n, n} : null;
+  }
+  let best = null;
+  for (const k of Object.keys(res)){
+    const r = res[k]; if (!r || r.n < 3) continue;
+    if (!best || r.mae < res[best].mae - 1e-9 || (Math.abs(r.mae - res[best].mae) < 1e-9 && r.acc > res[best].acc)) best = k;
+  }
+  return (evalCache[locId] = {n: all.length, res, best});
+}
+function estimate(locId, q){
+  const tr = trainSet(locId); const ev = getEval(locId);
+  const order = ev.best ? [ev.best, 'blend', 'calib', 'detect', 'knn'] : ['calib', 'detect', 'knn'];
+  for (const k of order){
+    const v = METHODS[k].fn(q, tr);
+    if (v != null && isFinite(v)) return {value: Math.max(0, Math.round(v)), method: k, stats: ev.res[k] || null, n: tr.length};
+  }
+  return null;
+}
+const GOAL = 10;
+function phaseOf(locId){
+  const ev = getEval(locId); const b = ev.best ? ev.res[ev.best] : null;
+  if (ev.n < 3) return {key:'init', n:ev.n, acc:null};
+  if (!b || b.n < GOAL || b.acc < .9) return {key:'learning', n:ev.n, acc:b ? b.acc : null};
+  return {key:'ready', n:ev.n, acc:b.acc};
+}
+
+/* ---------- views ---------- */
+function showView(v){
+  if (v !== 'history') exitSelect();
+  document.querySelectorAll('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.view === v));
+  if (v === 'history') renderHistory();
+  if (v === 'settings') renderSettings();
+  if (v === 'today') renderToday();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.view)));
+const currentView = () => (document.querySelector('.view.active') || {}).id;
+
+function renderStatus(){
+  const s = $('#savePill');
+  const sm = Data.mode;
+  s.className = 'pill ' + (sm === 'pending' ? 'loading' : sm);
+  s.lastElementChild.textContent = sm === 'cloud' ? (Data.canWrite ? 'サイトに保存' : 'サイトの記録（閲覧のみ）') : sm === 'local' ? 'この端末に保存' : '保存先を確認中…';
+  const p = $('#aiPill');
+  p.className = 'pill ' + AI.status;
+  p.lastElementChild.textContent = AI.status === 'ready' ? (AI.kind === 'tf' ? 'AI 利用可（端末内で処理）' : 'AI 利用可') : AI.status === 'loading' ? 'AI 準備中…' : 'AI 利用不可（似た写真で学習）';
+}
+
+function todayRecords(){
+  const k = dayKey(); const m = {};
+  samples.filter(s => s.date === k && !s.trainOnly).sort((a, b) => a.ts - b.ts).forEach(s => { m[s.locId] = s; });
+  return m;
+}
+
+function renderToday(){
+  $('#todayDate').textContent = fmtDay(dayKey());
+  const rec = todayRecords(); const locs = settings.locations;
+  let total = 0, done = 0, expTotal = 0, expAll = true;
+  locs.forEach(l => { const r = rec[l.id]; if (r){ total += r.count; done++; } if (l.expected == null) expAll = false; else expTotal += l.expected; });
+  $('#totalNum').textContent = total;
+  const C = 169.65, pct = locs.length ? done / locs.length : 0;
+  const fg = $('#ringFg'); fg.style.strokeDashoffset = C * (1 - pct); fg.style.stroke = pct >= 1 ? 'var(--green)' : 'var(--blue)';
+  $('#ringLabel').textContent = `${done}/${locs.length}`;
+  let sub;
+  if (done === locs.length && locs.length){
+    if (expAll){ const d = total - expTotal; sub = d === 0 ? `<span class="ok">基準 ${expTotal} 台と一致</span>` : `<span class="ng">基準 ${expTotal} 台より ${d>0?'+':''}${d} 台</span>`; }
+    else sub = '<span class="ok">すべての場所をカウント済み</span>';
+  } else sub = `残り ${locs.length - done} か所`;
+  $('#heroSub').innerHTML = sub;
+
+  $('#locList').innerHTML = locs.map((l, i) => {
+    const r = rec[l.id];
+    let subTxt = '未カウント';
+    if (r){
+      subTxt = `${fmtTime(r.ts)} に記録`;
+      if (r.estimate != null) subTxt += ` · AI ${r.estimate}台 ${r.estimate === r.count ? '<span class="ok">✓</span>' : '<span class="ng">✕</span>'}`;
+    }
+    let badge = '';
+    if (r && l.expected != null && r.count !== l.expected){ const d = r.count - l.expected; badge = `<span class="badge ng">${d>0?'+':''}${d}</span>`; }
+    const val = r ? `<span class="row-val">${r.count}<small>台</small></span>` : `<span class="row-detail">—</span>`;
+    return `<button class="row" id="loc-${esc(l.id)}" data-loc="${esc(l.id)}">${tile(i)}<div class="row-main"><div class="row-title">${esc(l.name)}${badge}</div><div class="row-sub">${subTxt}</div></div>${val}${ICON.chev}</button>`;
+  }).join('');
+  $('#btnClose').disabled = done === 0;
+  $('#locNote').textContent = Data.mode === 'cloud' && !Data.canWrite
+    ? 'このページは閲覧のみの権限で開いています。記録を追加するには、共有元に編集できる権限をもらってください。'
+    : `撮影したら、目視で数えた台数を入力してください。その台数が「正解」として${Data.mode === 'cloud' ? 'サイト' : 'このブラウザ'}に蓄積され、AIが学習します。`;
+  renderLearn();
+}
+$('#locList').addEventListener('click', e => { const b = e.target.closest('[data-loc]'); if (b) openCapture(b.dataset.loc, false); });
+
+function renderLearn(){
+  const locs = settings.locations; const ps = locs.map(l => phaseOf(l.id));
+  const allReady = ps.length && ps.every(p => p.key === 'ready');
+  const total = samples.filter(s => s.det != null || s.emb).length;
+  const where = Data.mode === 'cloud' ? 'このサイト' : 'この端末';
+  const title = allReady ? 'AIは実用レベルです' : '目視の台数でAIを学習させましょう';
+  const sub = allReady
+    ? '撮影すると推定値が自動入力されます。合っているか確認して確定してください。'
+    : `${where}に蓄積された写真と正解の台数（現在 ${total} 件）を手本にして、AIが数えます。毎日続けるほど正確になります。`;
+  const rows = locs.map((l, i) => {
+    const p = ps[i];
+    return `<div class="learn-loc"><span>${esc(l.name)}</span><span class="muted">学習 ${p.n}件${p.acc != null ? ` · 一致率 ${Math.round(p.acc*100)}%` : ''}</span></div>`;
+  }).join('');
+  $('#learnCard').innerHTML = `
+    <div class="learn-top"><div class="ai-icon">${ICON.sparkle}</div><div class="row-main"><div class="learn-title">${title}</div><div class="learn-sub">${sub}</div></div></div>
+    ${allReady ? '' : `<div class="steps"><div><b>1</b>撮影する</div><div><b>2</b>目視で数えて入力</div><div><b>3</b>AIに学習させる</div></div>`}
+    ${rows}
+    <button class="row link" id="learnPast" style="border-top:.5px solid var(--sep)" ${Data.mode === 'cloud' && !Data.canWrite ? 'disabled' : ''}>${tile(3, ICON.photo)}<div class="row-main"><div class="row-title">過去の写真でも学習させる</div><div class="row-sub">撮影済みの写真と台数を追加（締めの合計には含みません）</div></div>${ICON.chev}</button>`;
+  $('#learnNote').textContent = allReady
+    ? '並べ方やカメラ位置を変えた場合は精度が下がることがあります。その場合も目視の台数を入力すれば再び学習します。'
+    : 'AIの精度が十分に上がるまでは、AIの答えは目視の台数を入力した後に表示されます（先入観なく数えるため）。';
+  $('#learnPast').onclick = async () => {
+    const id = await pickLocation('どの場所の写真ですか？', '選んだ場所の学習データとして追加します。締めの合計には含まれません。');
+    if (id) setTimeout(() => openCapture(id, true), 350);
+  };
+}
+
+/* ---------- sheets ---------- */
+function openSheet(el){ el.classList.add('open'); el.setAttribute('aria-hidden', 'false'); document.body.classList.add('locked'); }
+function closeSheet(el){ el.classList.remove('open'); el.setAttribute('aria-hidden', 'true'); if (!document.querySelector('.sheet.open')) document.body.classList.remove('locked'); }
+document.querySelectorAll('.sheet').forEach(sh => sh.addEventListener('click', e => {
+  if (e.target === sh || e.target.closest('[data-close]')) closeSheet(sh);
+}));
+
+/* ---------- capture ---------- */
+function openCapture(locId, trainOnly){
+  const l = locById(locId); if (!l) return;
+  if (Data.mode === 'cloud' && !Data.canWrite){ toast('閲覧のみの権限のため記録できません'); return; }
+  const ph = phaseOf(locId).key;
+  cap = {locId, trainOnly: !!trainOnly, photo:false, img:null, emb:null, det:null, note:'', est:null, aiState:'idle', phase:ph, revealed: ph === 'ready', ctl:null, saving:false};
+  $('#capTitle').textContent = (trainOnly ? '学習：' : '') + l.name;
+  const learning = ph !== 'ready';
+  $('#capAiHead').textContent = learning ? 'AIの答え合わせ' : 'AIの推定';
+  $('#capCountHead').textContent = learning ? '目視で数えた台数（AIに教える正解）' : '目視でカウントした台数';
+  const body = $('#capBody'), btn = $('#btnConfirm');
+  if (learning){ body.insertBefore($('#countBlock'), $('#aiBlock')); }
+  else { body.insertBefore($('#aiBlock'), $('#countBlock')); }
+  body.appendChild(btn);
+  $('#capEmpty').hidden = false; $('#capImg').hidden = true; $('#capImg').removeAttribute('src'); $('#btnRetake').hidden = true;
+  $('#capCount').value = '';
+  renderAiCard(); updateConfirm();
+  body.scrollTop = 0;
+  openSheet($('#capSheet'));
+}
+function closeCapture(){ if (cap && cap.ctl) cap.ctl.abort(); cap = null; }
+$('#capSheet').addEventListener('click', e => { if (e.target === $('#capSheet') || e.target.closest('[data-close]')) closeCapture(); });
+function pickCamera(){ const i = $('#camInput'); i.value = ''; i.click(); }
+function pickLibrary(){ const i = $('#libInput'); i.value = ''; i.click(); }
+$('#btnShoot').onclick = pickCamera;
+$('#btnPick').onclick = pickLibrary;
+$('#btnRetake').onclick = () => cap && cap.trainOnly ? pickLibrary() : pickCamera();
+$('#camInput').onchange = e => { const f = e.target.files[0]; if (f) analyze(f); };
+$('#libInput').onchange = e => { const f = e.target.files[0]; if (f) analyze(f); };
+
+function loadImage(file){
+  return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = URL.createObjectURL(file); });
+}
+async function analyze(file){
+  if (!cap) return; const my = cap;
+  if (my.ctl) my.ctl.abort();
+  let work;
+  try {
+    const img = await loadImage(file);
+    const sc = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+    work = document.createElement('canvas'); work.width = Math.round(img.naturalWidth * sc); work.height = Math.round(img.naturalHeight * sc);
+    work.getContext('2d').drawImage(img, 0, 0, work.width, work.height);
+    URL.revokeObjectURL(img.src);
+  } catch(e){ toast('この写真は読み込めませんでした。別の写真をお試しください'); return; }
+  if (cap !== my) return;
+  // stored copy: small enough for the site database
+  const s2 = Math.min(1, 560 / Math.max(work.width, work.height));
+  const sm = document.createElement('canvas'); sm.width = Math.round(work.width * s2); sm.height = Math.round(work.height * s2);
+  sm.getContext('2d').drawImage(work, 0, 0, sm.width, sm.height);
+  my.img = sm.toDataURL('image/jpeg', .68);
+  my.emb = fingerprint(work);
+  my.photo = true; my.det = null; my.detSrc = null; my.note = ''; my.est = estimate(my.locId, {det:null, emb:my.emb});
+  $('#capImg').src = my.img; $('#capImg').hidden = false; $('#capEmpty').hidden = true; $('#btnRetake').hidden = false;
+  if (AI.fn){
+    my.aiState = 'busy'; renderAiCard(); updateConfirm();
+    my.ctl = new AbortController();
+    try {
+      const blob = await canvasBlob(work, .85);
+      const r = await askClaude(my.locId, blob);
+      if (cap !== my) return;
+      my.det = r.count; my.detSrc = 'claude'; my.note = r.note; my.aiState = 'done';
+      my.est = estimate(my.locId, {det:my.det, detSrc:'claude', emb:my.emb});
+    } catch(e){
+      if (cap !== my) return;
+      const c = e && e.code;
+      my.aiState = c === 'cancelled' ? 'idle' : 'error';
+      if (['not_granted','sampling_disabled','images_unavailable','not_declared','capability_disabled','capability_removed'].includes(c)){ AI.fn = null; AI.status = 'offline'; renderStatus(); }
+      my.err = c === 'rate_limited' ? 'AIの利用回数の上限に達しました。しばらくしてから撮り直してください。'
+        : c === 'not_granted' ? 'AIの利用が許可されませんでした。似た写真からの推定だけで続けます。'
+        : c === 'image_rejected' ? 'この写真はAIに送れませんでした。撮り直してください。'
+        : 'AIの推定に失敗しました。台数の入力と学習はそのまま続けられます。';
+    }
+  } else if (AI.tf){
+    my.aiState = 'busy'; renderAiCard(); updateConfirm();
+    try {
+      const preds = await AI.tf.detect(work, 100, 0.35);
+      if (cap !== my) return;
+      my.det = preds.filter(p => TF_CLASSES.includes(p.class)).length; my.detSrc = 'tf';
+      my.aiState = 'done'; my.est = estimate(my.locId, {det:my.det, detSrc:'tf', emb:my.emb});
+    } catch(e){ if (cap !== my) return; my.aiState = 'error'; my.err = 'AIの推定に失敗しました。台数の入力と学習はそのまま続けられます。'; }
+  } else my.aiState = 'done';
+  if (cap !== my) return;
+  if (my.phase === 'ready' && my.est && $('#capCount').value === '') $('#capCount').value = my.est.value;
+  renderAiCard(); updateConfirm();
+}
+function renderAiCard(){
+  const el = $('#capAi');
+  if (!cap) return;
+  if (!cap.photo){
+    const st = AI.kind === 'claude' ? 'AIが過去の写真を手本にして台数を数えます。' : AI.kind === 'tf' ? 'AIが写真の端末を検出して数え、過去の正解で補正します。' : AI.status === 'loading' ? 'AIを準備しています…' : 'AIが使えないため、似た写真の台数から推定します。';
+    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-text">写真を撮ると推定が表示されます。<br><span class="muted">${st}</span></div></div>`; return;
+  }
+  if (cap.aiState === 'busy' && cap.revealed){
+    el.innerHTML = `<div class="ai-row"><div class="spinner"></div><div class="ai-text muted">AIが写真の端末を数えています…${AI.kind === 'claude' ? '（10〜60秒ほど）' : ''}</div></div>`; return;
+  }
+  if (!cap.revealed){
+    const bg = cap.aiState === 'busy' ? '<br><span class="muted">AIは裏で数えています。</span>' : '';
+    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-text">AIの答えはまだ表示していません。<br><span class="muted">先入観なく数えるため、目視の台数を入力すると答え合わせが表示されます。</span>${bg}</div></div>`; return;
+  }
+  const e = cap.est;
+  const errLine = cap.aiState === 'error' ? `<div class="ai-meta warn">${esc(cap.err || '')}</div>` : '';
+  if (!e){
+    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-text">まだ推定できるだけのデータがありません。</div><div class="ai-meta">確定すると、この写真と台数が最初の手本になります。</div>${errLine}</div></div>`; return;
+  }
+  const st = e.stats;
+  const meta = st
+    ? `過去の誤差 平均±${st.mae.toFixed(1)}台 · 一致率 ${Math.round(st.acc*100)}%（${st.n}件で検証）`
+    : `学習データ ${e.n}件 · まだ参考値です`;
+  const noteLine = cap.note ? `<div class="ai-meta">AIのメモ：${esc(cap.note)}</div>` : '';
+  if (cap.phase !== 'ready'){
+    const h = parseInt($('#capCount').value, 10); const d = e.value - h;
+    el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-label">${METHODS[e.method].label}</div><div class="ai-text">${d === 0 ? '<span class="ok">AIの推定と一致しました</span>' : `<span class="warn">AIは ${Math.abs(d)} 台${d > 0 ? '多く' : '少なく'}数えています</span>`}</div><div class="ai-meta">確定すると、あなたが数えた台数が正解として学習されます</div>${noteLine}${errLine}</div></div>
+      <div class="cmp"><div><span>目視（正解）</span><b>${h}台</b></div><div><span>AIの推定</span><b>${e.value}台</b></div>${cap.det != null && cap.det !== e.value ? `<div><span>AIの素の数え</span><b>${cap.det}台</b></div>` : ''}</div>`;
+    return;
+  }
+  el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-label">${METHODS[e.method].label}</div><div class="ai-num">${e.value}<small>台</small></div><div class="ai-meta">${meta}</div>${noteLine}${errLine}</div><button class="btn-tinted sm" id="btnUseAi">この値を入力</button></div>`;
+  $('#btnUseAi').onclick = () => { $('#capCount').value = e.value; updateConfirm(); };
+}
+function updateConfirm(){
+  if (!cap) return;
+  const v = $('#capCount').value.trim(); const ok = /^\d+$/.test(v);
+  if (cap.phase !== 'ready' && cap.photo && ok && !cap.revealed) cap.revealed = true;
+  renderAiCard();
+  const b = $('#btnConfirm');
+  const busyAndHidden = cap.aiState === 'busy';
+  if (!cap.photo){ b.textContent = cap.trainOnly ? '写真を選んでAIに学習させる' : '撮影してAIに学習させる'; b.disabled = false; }
+  else if (cap.saving){ b.textContent = '保存しています…'; b.disabled = true; }
+  else if (busyAndHidden && ok){ b.textContent = 'AIの答えを待っています…'; b.disabled = true; }
+  else { b.textContent = 'AIに学習させる'; b.disabled = !ok; }
+  const l = locById(cap.locId); const n = $('#capNote');
+  if (ok && l && l.expected != null){
+    const d = +v - l.expected;
+    n.innerHTML = d === 0 ? `<span class="ok">基準台数 ${l.expected} 台と一致しています</span>` : `<span class="ng">基準台数 ${l.expected} 台より ${d>0?'+':''}${d} 台です。もう一度確認してください</span>`;
+  } else {
+    n.textContent = cap.photo ? 'AIの値ではなく、実際に数えた台数を入力してください。この値が「正解」としてサイトに保存され、学習に使われます。' : '写真を撮ると、入力した台数を正解としてAIが学習します。';
+  }
+}
+$('#capCount').addEventListener('input', updateConfirm);
+$('#btnMinus').onclick = () => { const i = $('#capCount'); i.value = Math.max(0, (parseInt(i.value, 10) || 0) - 1); updateConfirm(); };
+$('#btnPlus').onclick = () => { const i = $('#capCount'); const v = parseInt(i.value, 10); i.value = isNaN(v) ? 1 : v + 1; updateConfirm(); };
+
+$('#btnConfirm').onclick = async () => {
+  if (!cap) return;
+  if (!cap.photo){ cap.trainOnly ? pickLibrary() : pickCamera(); return; }
+  const c = parseInt($('#capCount').value, 10); if (!(c >= 0)) return;
+  const my = cap;
+  const s = {
+    id: uid(), locId: my.locId, date: dayKey(), ts: Date.now(), count: c,
+    det: my.det, detSrc: my.detSrc || null, emb: my.emb, img: my.img,
+    estimate: my.est ? my.est.value : null, method: my.est ? my.est.method : null, trainOnly: my.trainOnly
+  };
+  my.saving = true; updateConfirm();
+  try { await Data.putSample(s); }
+  catch(e){ my.saving = false; updateConfirm(); toast(writeError(e)); return; }
+  closeSheet($('#capSheet')); cap = null;
+  const p = phaseOf(s.locId);
+  toast(s.estimate != null ? `学習しました：AI ${s.estimate}台 → 正解 ${s.count}台` : `学習しました（${locName(s.locId)} ${p.n}件目）`);
+};
+
+/* ---------- 締め summary ---------- */
+function summaryText(){
+  const rec = todayRecords(); const now = new Date(); let total = 0;
+  const lines = settings.locations.map(l => { const r = rec[l.id]; if (r) total += r.count; return `${l.name}：${r ? r.count + '台' : '未カウント'}${r && l.expected != null && r.count !== l.expected ? `（基準${l.expected}台）` : ''}`; });
+  return `【端末 締め】${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${pad(now.getHours())}:${pad(now.getMinutes())}\n${lines.join('\n')}\n合計：${total}台`;
+}
+function openSummary(){
+  const rec = todayRecords(); let total = 0, missing = 0;
+  const rows = settings.locations.map((l, i) => {
+    const r = rec[l.id]; if (r) total += r.count; else missing++;
+    let sub = r ? `${fmtTime(r.ts)} 記録` : '未カウント';
+    if (r && l.expected != null){ const d = r.count - l.expected; sub += d === 0 ? ' · <span class="ok">基準と一致</span>' : ` · <span class="ng">基準${l.expected}台 (${d>0?'+':''}${d})</span>`; }
+    return `<div class="row">${tile(i)}<div class="row-main"><div class="row-title">${esc(l.name)}</div><div class="row-sub">${sub}</div></div>${r ? `<span class="row-val">${r.count}<small>台</small></span>` : '<span class="row-detail warn">—</span>'}</div>`;
+  }).join('');
+  $('#sumBody').innerHTML = `
+    <div class="sum-total"><div class="hero-label">${fmtDay(dayKey())} の合計</div><div class="hero-num">${total}<span class="unit">台</span></div>
+    ${missing ? `<div class="hero-sub warn">${missing} か所が未カウントです</div>` : '<div class="hero-sub ok">すべての場所をカウントしました</div>'}</div>
+    <div class="section-h"><span>内訳</span></div>
+    <div class="group icons">${rows}</div>
+    <div class="sum-actions"><button id="sumCopy">${ICON.copy}テキストをコピー</button></div>
+    <div class="sum-text" id="sumText"></div>
+    <p class="footnote">コピーしたテキストはチャットや日報にそのまま貼り付けられます。</p>`;
+  $('#sumText').textContent = summaryText();
+  $('#sumCopy').onclick = () => copyText(summaryText(), $('#sumText'));
+  openSheet($('#sumSheet'));
+}
+$('#btnClose').onclick = openSummary;
+function copyText(t, el){
+  const fallback = () => {
+    if (el){ const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    toast('テキストを選択しました。長押しでコピーしてください');
+  };
+  try { navigator.clipboard.writeText(t).then(() => toast('コピーしました'), fallback); } catch(e){ fallback(); }
+}
+
+/* ---------- history ---------- */
+$('#histSeg').addEventListener('click', e => {
+  const b = e.target.closest('[data-seg]'); if (!b) return;
+  histSeg = b.dataset.seg; exitSelect(); document.querySelectorAll('#histSeg button').forEach(x => x.classList.toggle('on', x === b)); renderHistory();
+});
+
+/* select & delete learned data */
+let selMode = false; const selected = new Set();
+const CHECK = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.4l2.6 2.6L11 4.4"/></svg>';
+function exitSelect(){ selMode = false; selected.clear(); const b = $('#delBar'); if (b) b.hidden = true; document.body.classList.remove('selecting'); }
+function updateDelBar(){
+  const bar = $('#delBar'); bar.hidden = !(selMode && histSeg === 'data');
+  document.body.classList.toggle('selecting', !bar.hidden);
+  const btn = $('#delSel'); btn.disabled = selected.size === 0;
+  btn.textContent = selected.size ? `${selected.size} 件を削除` : '削除するデータを選んでください';
+  const c = $('#selCount'); if (c) c.textContent = selMode ? `${selected.size} 件を選択中` : `${samples.length} 件`;
+  const all = $('#selAll'); if (all) all.textContent = selected.size === samples.length && samples.length ? 'すべて解除' : 'すべて選択';
+}
+function renderDataList(body){
+  if (!samples.length){ exitSelect(); body.innerHTML = `<div class="empty">${ICON.photo}まだ学習データがありません。<br>撮影して目視の台数を入力すると、ここにたまっていきます。</div>`; return; }
+  const ro = Data.mode === 'cloud' && !Data.canWrite;
+  for (const id of [...selected]) if (!samples.some(s => s.id === id)) selected.delete(id);
+  const order = settings.locations.map(l => l.id);
+  const groups = {}; samples.forEach(s => { (groups[s.locId] = groups[s.locId] || []).push(s); });
+  const keys = Object.keys(groups).sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+  body.innerHTML = `
+    <div class="sel-bar"><span id="selCount"></span><span class="links">${selMode ? '<button id="selAll">すべて選択</button>' : ''}${ro ? '' : `<button id="selToggle">${selMode ? '完了' : '選択'}</button>`}</span></div>` +
+    keys.map(k => {
+      const list = groups[k].sort((a, b) => b.ts - a.ts);
+      const rows = list.map(s => {
+        const ai = s.estimate != null ? ` · AI ${s.estimate}台 ${s.estimate === s.count ? '<span class="ok">✓</span>' : '<span class="ng">✕</span>'}` : '';
+        return `<button class="row" id="dat-${s.id}" data-sel="${s.id}" aria-pressed="${selected.has(s.id)}">${selMode ? `<span class="check ${selected.has(s.id) ? 'on' : ''}">${CHECK}</span>` : ''}${s.img ? `<img class="thumb" src="${s.img}" alt="">` : '<span class="thumb"></span>'}<div class="row-main"><div class="row-title">${fmtDay(s.date)} ${fmtTime(s.ts)}${s.trainOnly ? '<span class="chip-mini">学習専用</span>' : ''}</div><div class="row-sub">正解 ${s.count}台${ai}</div></div><span class="row-val">${s.count}<small>台</small></span></button>`;
+      }).join('');
+      return `<div class="section-h"><span>${esc(locName(k))}</span><span>${list.length} 件</span></div><div class="group icons">${rows}</div>`;
+    }).join('') +
+    `<p class="footnote">数え間違えた記録や、並べ方を変える前の古い写真などを削除すると、AIはそのデータを使わなくなります。${selMode ? '' : '「選択」から複数まとめて削除できます。'}</p>`;
+  const t = $('#selToggle'); if (t) t.onclick = () => { if (selMode) exitSelect(); else selMode = true; renderHistory(); };
+  const a = $('#selAll'); if (a) a.onclick = () => { if (selected.size === samples.length) selected.clear(); else samples.forEach(s => selected.add(s.id)); renderHistory(); };
+  body.querySelectorAll('[data-sel]').forEach(r => r.onclick = () => {
+    if (ro) return;
+    if (!selMode){ selMode = true; }
+    const id = r.dataset.sel; selected.has(id) ? selected.delete(id) : selected.add(id);
+    renderHistory();
+  });
+  updateDelBar();
+}
+$('#delSel').onclick = async () => {
+  const ids = [...selected]; if (!ids.length) return;
+  const yes = await ask({title:`${ids.length} 件の学習データを削除しますか？`, message:'写真と台数がサイトから削除され、AIの学習にも使われなくなります。元に戻せません。', ok:'削除', danger:true});
+  if (!yes) return;
+  let n = 0; $('#delSel').disabled = true; $('#delSel').textContent = '削除しています…';
+  for (const id of ids){ try { await Data.delSample(id); selected.delete(id); n++; } catch(e){ toast(writeError(e)); break; } }
+  exitSelect(); renderHistory(); toast(`${n} 件を削除しました`);
+};
+
+function renderHistory(){
+  const body = $('#histBody');
+  if (histSeg === 'data'){ renderDataList(body); return; }
+  $('#delBar').hidden = true;
+  if (histSeg === 'records'){
+    const recs = samples.filter(s => !s.trainOnly);
+    if (!recs.length){ body.innerHTML = `<div class="empty">${ICON.clock}まだ記録がありません。<br>「今日」タブから撮影して記録すると、ここに日ごとにたまっていきます。</div>`; return; }
+    const byDate = {};
+    recs.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
+    body.innerHTML = Object.keys(byDate).sort().reverse().slice(0, 60).map(d => {
+      const list = byDate[d].sort((a, b) => a.ts - b.ts); const latest = {}; list.forEach(s => latest[s.locId] = s);
+      const total = Object.values(latest).reduce((x, s) => x + s.count, 0);
+      const rows = list.slice().sort((a, b) => (locIndex(a.locId) - locIndex(b.locId)) || (a.ts - b.ts)).map(s => {
+        const superseded = latest[s.locId] !== s;
+        const ai = s.estimate != null ? ` · AI ${s.estimate}台 ${s.estimate === s.count ? '<span class="ok">✓</span>' : '<span class="ng">✕</span>'}` : '';
+        return `<button class="row" id="rec-${s.id}" data-del="${s.id}">${s.img ? `<img class="thumb" src="${s.img}" alt="">` : `<span class="thumb"></span>`}<div class="row-main"><div class="row-title">${esc(locName(s.locId))}${superseded ? ' <span class="badge" style="background:var(--fill);color:var(--label2)">撮り直し前</span>' : ''}</div><div class="row-sub">${fmtTime(s.ts)}${ai}</div></div><span class="row-val">${s.count}<small>台</small></span></button>`;
+      }).join('');
+      return `<div class="section-h"><span>${fmtDay(d)}</span><span>合計 ${total}台</span></div><div class="group icons">${rows}</div>`;
+    }).join('') + `<p class="footnote">記録をタップすると削除できます。合計は各場所の最新の記録で計算しています。</p>`;
+    body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteSample(b.dataset.del));
+  } else {
+    const trainCnt = samples.filter(s => s.trainOnly).length;
+    body.innerHTML = `<div class="section-h"><span>場所ごとの学習状況</span></div>` + settings.locations.map((l, i) => {
+      const ev = getEval(l.id); const best = ev.best ? ev.res[ev.best] : null;
+      const recent = samples.filter(s => s.locId === l.id && s.estimate != null).sort((a, b) => a.ts - b.ts).slice(-21);
+      const dots = recent.map(s => { const d = Math.abs(s.estimate - s.count); return `<i class="${d === 0 ? 'ok' : d === 1 ? 'near' : 'ng'}" title="${s.date} AI${s.estimate}/実際${s.count}"></i>`; }).join('');
+      const acc = best ? Math.round(best.acc * 100) : 0;
+      return `<div class="group acc-card">
+        <div class="acc-top">${tile(i)}<div class="row-main"><div class="row-title">${esc(l.name)}</div><div class="row-sub">${best ? `採用中：${METHODS[ev.best].label}` : ev.n < 3 ? `あと ${3 - ev.n} 件で精度の計測を始めます` : '精度を計測中'}</div></div></div>
+        <div class="acc-stats">
+          <div><b>${ev.n}</b><span>学習データ</span></div>
+          <div><b>${best ? acc + '%' : '—'}</b><span>ぴったり一致率</span></div>
+          <div><b>${best ? '±' + best.mae.toFixed(1) : '—'}</b><span>平均誤差（台）</span></div>
+        </div>
+        <div class="bar"><span style="width:${acc}%;background:${acc >= 90 ? 'var(--green)' : acc >= 60 ? 'var(--orange)' : 'var(--red)'}"></span></div>
+        ${recent.length ? `<div class="row-sub" style="margin-top:12px">直近のAI推定（緑=一致・橙=1台差・赤=2台以上）</div><div class="dots">${dots}</div>` : ''}
+      </div>`;
+    }).join('') + `<p class="footnote">精度は「蓄積した写真を1枚ずつ伏せて、残りのデータで当てられるか」で自動検証しています。最も成績のよい方式が自動的に採用されます。一致率90%以上・10件以上になると、撮影時に推定値が自動入力されます。${trainCnt ? `<br>学習専用で追加した写真：${trainCnt}件` : ''}</p>`;
+  }
+}
+async function deleteSample(id){
+  const s = samples.find(x => x.id === id); if (!s) return;
+  if (Data.mode === 'cloud' && !Data.canWrite){ toast('閲覧のみの権限のため削除できません'); return; }
+  const yes = await ask({title:'この記録を削除しますか？', message:`${locName(s.locId)}（${fmtDay(s.date)} ${fmtTime(s.ts)}・${s.count}台）\n学習データからも削除されます。`, ok:'削除', danger:true});
+  if (!yes) return;
+  try { await Data.delSample(id); toast('削除しました'); } catch(e){ toast(writeError(e)); }
+}
+
+/* ---------- settings ---------- */
+function renderSettings(){
+  const locs = settings.locations;
+  const ro = Data.mode === 'cloud' && !Data.canWrite;
+  const dis = ro ? 'disabled' : '';
+  const locRows = locs.map((l, i) => `
+    <div class="row">${tile(i)}
+      <div class="row-main"><input class="inp" id="name-${esc(l.id)}" data-name="${esc(l.id)}" value="${esc(l.name)}" maxlength="24" aria-label="場所の名前" ${dis}></div>
+      <span class="mini-label">基準</span><input class="inp-num" id="exp-${esc(l.id)}" data-exp="${esc(l.id)}" type="number" inputmode="numeric" min="0" placeholder="—" value="${l.expected ?? ''}" aria-label="基準台数" ${dis}>
+      <button class="del-btn" data-rm="${esc(l.id)}" ${locs.length <= 1 || ro ? 'disabled' : ''} aria-label="削除">${ICON.minus}</button>
+    </div>`).join('');
+  const addRow = locs.length < 5 && !ro ? `<button class="row link" id="addLoc"><span class="tile" style="background:none">${ICON.plus}</span><div class="row-main"><div class="row-title">場所を追加</div></div></button>` : '';
+  const withPhoto = samples.filter(s => s.det != null || s.emb).length;
+  const where = Data.mode === 'cloud' ? 'このサイト（共有）' : Data.mode === 'local' ? 'この端末のブラウザ' : '確認中';
+  const whereSub = Data.mode === 'cloud' ? 'このページを開ける人全員で同じ記録と学習データを使います' : 'このブラウザに蓄積されます。別の端末へはバックアップで移せます';
+  $('#setBody').innerHTML = `
+    <div class="section-h"><span>カウントする場所（${locs.length}/5）</span></div>
+    <div class="group icons">${locRows}${addRow}</div>
+    <p class="footnote">「基準」に通常あるべき台数を入れておくと、ズレたときに赤く知らせます（空欄でも可）。設定もサイトに保存され、全員に反映されます。</p>
+
+    <div class="section-h"><span>AIに数えさせるもの</span></div>
+    <div class="group"><textarea class="textarea" id="targetText" rows="3" aria-label="AIに数えさせるもの" ${dis}>${esc(settings.target)}</textarea></div>
+    <p class="footnote">AIへの説明です。「充電中の端末も数える」「予備の箱は数えない」など、現場のルールを書くと正確になります。</p>
+
+    <div class="section-h"><span>保存と学習</span></div>
+    <div class="group icons">
+      <div class="row">${tile(0, ICON.cloud)}<div class="row-main"><div class="row-title">保存先</div><div class="row-sub">${whereSub}</div></div><span class="row-detail">${where}</span></div>
+      <div class="row">${tile(1, ICON.brain)}<div class="row-main"><div class="row-title">学習データ</div></div><span class="row-detail">${withPhoto} 件</span></div>
+      <button class="row link" id="trainPast" ${dis}>${tile(3, ICON.photo)}<div class="row-main"><div class="row-title">過去の写真で学習させる</div><div class="row-sub">写真を選んで正解の台数を入力</div></div>${ICON.chev}</button>
+    </div>
+
+    <div class="section-h"><span>データ</span></div>
+    <div class="group icons">
+      ${Data.downloads || Data.mode === 'local' ? `<button class="row link" id="expJson">${tile(0, ICON.down)}<div class="row-main"><div class="row-title">バックアップを書き出す</div><div class="row-sub">写真・学習データを含むJSON</div></div></button>
+      <button class="row link" id="expCsv">${tile(1, ICON.doc)}<div class="row-main"><div class="row-title">記録をCSVで書き出す</div><div class="row-sub">Excel・Numbersで開けます</div></div></button>` : ''}
+      <button class="row link" id="impJson" ${dis}>${tile(0, ICON.up)}<div class="row-main"><div class="row-title">データを読み込む</div><div class="row-sub">以前のバックアップ（JSON）をサイトに取り込む</div></div></button>
+      <button class="row danger" id="wipe" ${dis}>${tile(4, ICON.trash)}<div class="row-main"><div class="row-title">すべての記録を削除</div></div></button>
+    </div>
+    <p class="footnote">${Data.mode === 'cloud' ? '写真はAIの手本として縮小してサイトに保存されます。AIに数えさせるときは、開いている人の Claude の利用枠を使います（初回に許可を求められます）。' : '写真と記録はこのブラウザの中にだけ保存され、外部には送信されません。ブラウザのデータを消すと失われるため、ときどきバックアップを書き出してください。'}</p>`;
+
+  if (ro) return;
+  document.querySelectorAll('[data-name]').forEach(inp => inp.onchange = () => { const l = locById(inp.dataset.name); if (!l) return; l.name = inp.value.trim() || l.name; inp.value = l.name; Data.saveSettings(); renderToday(); });
+  document.querySelectorAll('[data-exp]').forEach(inp => inp.onchange = () => { const l = locById(inp.dataset.exp); if (!l) return; const v = inp.value.trim(); l.expected = /^\d+$/.test(v) ? +v : null; inp.value = l.expected ?? ''; Data.saveSettings(); renderToday(); });
+  document.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+    const l = locById(b.dataset.rm); if (!l) return;
+    const yes = await ask({title:`「${l.name}」を削除しますか？`, message:'この場所の記録と学習データは残りますが、一覧には表示されなくなります。', ok:'削除', danger:true});
+    if (!yes) return;
+    settings.locations = settings.locations.filter(x => x !== l); Data.saveSettings(); renderSettings(); renderToday();
+  });
+  const add = $('#addLoc'); if (add) add.onclick = () => {
+    const letters = 'ABCDEFGHIJ'; const n = settings.locations.length;
+    settings.locations.push({id: uid(), name: `場所 ${letters[n] || n+1}`, expected: null}); Data.saveSettings(); renderSettings(); renderToday();
+    const all = document.querySelectorAll('[data-name]'); const el = all[all.length - 1]; if (el){ el.focus(); el.select(); }
+  };
+  $('#targetText').onchange = e => { settings.target = e.target.value.trim() || DEFAULT_TARGET; Data.saveSettings(); };
+  $('#trainPast').onclick = async () => { const id = await pickLocation('どの場所の写真ですか？', '選んだ場所の学習データとして追加します。締めの合計には含まれません。'); if (id) setTimeout(() => openCapture(id, true), 350); };
+  if ($('#expJson')) $('#expJson').onclick = exportJson;
+  if ($('#expCsv')) $('#expCsv').onclick = exportCsv;
+  $('#impJson').onclick = () => { const i = $('#importInput'); i.value = ''; i.click(); };
+  $('#wipe').onclick = async () => {
+    const yes = await ask({title:'すべての記録を削除しますか？', message:`記録と学習データ ${samples.length} 件をサイトから削除します。元に戻せません。`, ok:'すべて削除', danger:true});
+    if (!yes) return;
+    const ids = samples.map(s => s.id); let n = 0;
+    toast('削除しています…');
+    for (const id of ids){ try { await Data.delSample(id); n++; } catch(e){ toast(writeError(e)); break; } }
+    toast(`${n} 件を削除しました`);
+  };
+}
+function pickLocation(title, note){
+  return new Promise(res => {
+    const sh = $('#actSheet'); $('#actTitle').textContent = title; $('#actNote').textContent = note || '';
+    $('#actList').innerHTML = settings.locations.map((l, i) => `<button class="row" data-id="${esc(l.id)}">${tile(i)}<div class="row-main"><div class="row-title">${esc(l.name)}</div><div class="row-sub">学習データ ${getEval(l.id).n} 件</div></div>${ICON.chev}</button>`).join('');
+    let done = false;
+    $('#actList').onclick = e => { const b = e.target.closest('[data-id]'); if (!b) return; done = true; closeSheet(sh); res(b.dataset.id); };
+    const obs = new MutationObserver(() => { if (!sh.classList.contains('open')){ obs.disconnect(); if (!done) res(null); } });
+    obs.observe(sh, {attributes: true, attributeFilter: ['class']});
+    openSheet(sh);
+  });
+}
+
+/* ---------- import / export ---------- */
+async function save(filename, data){
+  if (!Data.downloads){
+    try {
+      const type = filename.endsWith('.csv') ? 'text/csv' : 'application/json';
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type})); a.download = filename;
+      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      toast('書き出しました');
+    } catch(e){ toast('書き出せませんでした'); }
+    return;
+  }
+  try { await Data.downloads.save({filename, data}); toast('書き出しました'); }
+  catch(e){ if (e && e.code !== 'declined') toast('書き出せませんでした'); }
+}
+function exportJson(){
+  save(`terminal-count-backup-${dayKey()}.json`, JSON.stringify({app:'terminal-count', version:2, exportedAt:new Date().toISOString(), settings, samples}));
+}
+function exportCsv(){
+  const rows = [['日付','時刻','場所','台数（目視）','AI推定','推定方式','AIの素の数え','学習専用']];
+  samples.slice().sort((a, b) => a.ts - b.ts).forEach(s => {
+    rows.push([s.date, fmtTime(s.ts), locName(s.locId), s.count, s.estimate ?? '', s.method ? METHODS[s.method].label : '', s.det ?? '', s.trainOnly ? '○' : '']);
+  });
+  save(`terminal-count-${dayKey()}.csv`, '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n'));
+}
+$('#importInput').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  let data;
+  try { data = JSON.parse(await f.text()); if (!data || !Array.isArray(data.samples)) throw 0; }
+  catch(err){ toast('読み込めないファイルです。書き出したバックアップ（JSON）を選んでください'); return; }
+  const have = new Set(samples.map(s => s.id)); let added = 0;
+  toast('読み込んでいます…');
+  for (const raw of data.samples){
+    if (!raw || !raw.id || typeof raw.count !== 'number' || have.has(raw.id) || !/^[A-Za-z0-9_\-.~:@+]+$/.test(raw.id)) continue;
+    const s = {
+      id: raw.id, locId: String(raw.locId), date: String(raw.date), ts: Number(raw.ts) || Date.now(), count: raw.count,
+      det: typeof raw.det === 'number' ? raw.det : null, detSrc: raw.detSrc || (typeof raw.det === 'number' ? 'tf' : null),
+      emb: null, img: raw.img || raw.thumb || null,
+      estimate: raw.estimate ?? null, method: raw.method && METHODS[raw.method] ? raw.method : null, trainOnly: !!raw.trainOnly
+    };
+    if (s.img){ try { const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = s.img; }); s.emb = fingerprint(im); } catch(_){ s.img = null; } }
+    try { await Data.putSample(s); added++; } catch(err){ toast(writeError(err)); break; }
+  }
+  if (data.settings && Array.isArray(data.settings.locations) && data.settings.locations.some(l => !locById(l.id))){
+    const yes = await ask({title:'場所の設定も読み込みますか？', message:`バックアップの場所（${data.settings.locations.map(l => l.name).join('、')}）に置き換えます。`, ok:'読み込む'});
+    if (yes){ settings = Object.assign(DEFAULTS(), {locations: data.settings.locations, target: data.settings.target || settings.target}); await Data.saveSettings(); }
+  }
+  renderSettings(); renderToday();
+  toast(`${added} 件のデータを読み込みました`);
+};
+
+/* ---------- init ---------- */
+document.addEventListener('visibilitychange', () => { if (!document.hidden) renderToday(); });
+renderStatus(); renderToday();
+Data.init().then(() => { renderStatus(); Data.subscribe(); renderToday(); if (currentView() === 'view-settings') renderSettings(); });
+AI.init();
+})();
+</script>
+</body>
+</html>
