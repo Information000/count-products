@@ -183,6 +183,16 @@ button.row:disabled{opacity:.4}
 .retake svg{width:16px;height:16px}
 /* file pickers stay in the page (not display:none) so phones allow opening the camera from a script */
 .file-in{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none}
+.ask{padding:2px 16px 16px}
+.ask-q{font-size:17px;font-weight:600;text-align:center;margin-bottom:12px}
+.ask-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ask-btns button{height:52px;border-radius:12px;font-size:17px;font-weight:600;transition:transform .1s,opacity .15s}
+.ask-btns button:active{transform:scale(.97);opacity:.85}
+.ask-yes{background:var(--green);color:var(--on-accent)}
+.ask-no{background:var(--fill);color:var(--label)}
+.fix-line button{color:var(--blue);font-weight:600;font-size:13px;margin-left:auto;white-space:nowrap}
+.diff-line{margin:0 16px 14px;padding:10px 12px;border-radius:10px;background:var(--bg);font-size:13px;line-height:1.5}
+.diff-line b{font-variant-numeric:tabular-nums}
 .fix-line{display:flex;align-items:center;gap:8px;margin:0 16px 14px;padding:9px 12px;border-radius:10px;background:var(--blue-tint);color:var(--blue);font-size:13px;font-weight:500;line-height:1.4}
 .photo-retake{position:absolute;right:10px;top:10px;height:30px;padding:0 12px;border-radius:999px;background:rgba(0,0,0,.5);color:#ffffff;font-size:13px;font-weight:600;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .spinner{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--fill);border-top-color:var(--label2);animation:spin .8s linear infinite;flex:none}
@@ -375,7 +385,8 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
       <div class="section-h"><span>AIの判定</span></div>
       <div class="group" id="capAi"></div>
 
-      <div class="section-h"><span id="capCountHead">確定する台数</span></div>
+      <div id="countBlock" hidden>
+      <div class="section-h"><span id="capCountHead">正しい台数を入力してください</span></div>
       <div class="group">
         <div class="stepper">
           <button class="step-btn" id="btnMinus" aria-label="1台減らす"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
@@ -385,6 +396,7 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
         <div class="unit-label">台</div>
       </div>
       <p class="footnote" id="capNote"></p>
+      </div>
 
       <button class="btn-primary" id="btnConfirm">撮影する</button>
     </div>
@@ -775,6 +787,15 @@ const METHODS = {
     let w = 0, v = 0; near.forEach(x => { const ww = Math.exp((x.sim - 1) * 15); w += ww; v += ww * x.c; });
     return w ? v / w : null;
   }},
+  bias:   { label:'AI＋最近の差で補正', fn:(q, tr) => {
+    // 最近の「正解 − AIの数え」を、新しい記録ほど重く平均して足す
+    if (q.det == null) return null;
+    const src = q.detSrc || 'tf';
+    const t = tr.filter(s => s.det != null && (s.detSrc || 'tf') === src).sort((a, b) => b.ts - a.ts).slice(0, 20);
+    if (!t.length) return null;
+    let w = 0, v = 0; t.forEach((s, i) => { const ww = Math.pow(.8, i); w += ww; v += ww * (s.count - s.det); });
+    return q.det + v / w;
+  }},
   blend:  { label:'総合判定', fn:(q, tr) => {
     const a = METHODS.calib.fn(q, tr), b = METHODS.knn.fn(q, tr);
     return (a == null || b == null) ? null : (a + b) / 2;
@@ -787,13 +808,16 @@ function getEval(locId){
   if (evalCache[locId]) return evalCache[locId];
   const all = trainSet(locId); const res = {};
   for (const k of Object.keys(METHODS)){
-    let err = 0, hit = 0, n = 0;
-    for (const s of all){
-      const p = METHODS[k].fn(s, all.filter(x => x !== s));
-      if (p == null || !isFinite(p)) continue;
-      const r = Math.max(0, Math.round(p)); err += Math.abs(r - s.count); hit += (r === s.count) ? 1 : 0; n++;
-    }
-    res[k] = n ? {mae: err/n, acc: hit/n, n} : null;
+    // 新しい記録ほど重く評価する（並べ方が変わったら、最近に合う方式へ切り替わる）
+    let err = 0, hit = 0, wsum = 0, n = 0;
+    all.forEach((s, idx) => {
+      // その記録より前のデータだけで当てられたか（実際に使ったときと同じ条件）
+      const p = METHODS[k].fn(s, all.filter(x => x.ts < s.ts));
+      if (p == null || !isFinite(p)) return;
+      const w = Math.pow(.85, idx);
+      const r = Math.max(0, Math.round(p)); err += w * Math.abs(r - s.count); hit += w * (r === s.count ? 1 : 0); wsum += w; n++;
+    });
+    res[k] = n ? {mae: err/wsum, acc: hit/wsum, n} : null;
   }
   let best = null;
   for (const k of Object.keys(res)){
@@ -804,7 +828,7 @@ function getEval(locId){
 }
 function estimate(locId, q){
   const tr = trainSet(locId); const ev = getEval(locId);
-  const order = ev.best ? [ev.best, 'blend', 'calib', 'detect', 'knn'] : ['calib', 'detect', 'knn'];
+  const order = ev.best ? [ev.best, 'blend', 'bias', 'calib', 'detect', 'knn'] : ['bias', 'calib', 'detect', 'knn'];
   for (const k of order){
     const v = METHODS[k].fn(q, tr);
     if (v != null && isFinite(v)) return {value: Math.max(0, Math.round(v)), method: k, stats: ev.res[k] || null, n: tr.length};
@@ -901,12 +925,12 @@ function renderLearn(){
   }).join('');
   $('#learnCard').innerHTML = `
     <div class="learn-top"><div class="ai-icon">${ICON.sparkle}</div><div class="row-main"><div class="learn-title">${title}</div><div class="learn-sub">${sub}</div></div></div>
-    <div class="steps"><div><b>1</b>撮影する</div><div><b>2</b>AIが自動で判定</div><div><b>3</b>違えば直して確定</div></div>
+    <div class="steps"><div><b>1</b>撮影する</div><div><b>2</b>AIの判定を確認</div><div><b>3</b>違えば正しい数を入力</div></div>
     ${rows}
     <button class="row link" id="learnPast" style="border-top:.5px solid var(--sep)" ${Data.mode === 'cloud' && !Data.canWrite ? 'disabled' : ''}>${tile(3, ICON.photo)}<div class="row-main"><div class="row-title">過去の写真でも学習させる</div><div class="row-sub">撮影済みの写真と台数を追加（締めの合計には含みません）</div></div>${ICON.chev}</button>`;
   $('#learnNote').textContent = allReady
     ? '並べ方やカメラ位置を変えた場合は精度が下がることがあります。その場合も目視の台数を入力すれば再び学習します。'
-    : '初めのうちはAIの判定がずれることがあります。そのときは目視で数えた台数に直して確定してください。直した記録が増えるほど、判定が正確になります。';
+    : 'AIの判定が出たら「合っていますか？」に答えてください。「いいえ」のときは正しい台数を入力します。AIとの差が記録され、次の判定から補正されます。';
   $('#learnPast').onclick = async () => {
     const id = await pickLocation('どの場所の写真ですか？', '選んだ場所の学習データとして追加します。締めの合計には含まれません。');
     if (id) setTimeout(() => openCapture(id, true), 350);
@@ -957,7 +981,7 @@ function pickLibrary(){ const i = $('#libInput'); i.value = ''; i.click(); }
 
 $('#btnRetake').onclick = () => {
   if (!cap) return;
-  Object.assign(cap, {photo:false, img:null, emb:null, det:null, detSrc:null, boxes:[], est:null, aiState:'idle', userEdited:false});
+  Object.assign(cap, {photo:false, img:null, emb:null, det:null, detSrc:null, boxes:[], est:null, aiState:'idle', userEdited:false, verdict:null});
   $('#capCount').value = '';
   setViewer('empty'); renderAiCard(); updateConfirm();
   if (cap.trainOnly) pickLibrary(); else pickCamera();
@@ -1026,7 +1050,8 @@ async function analyzeCanvas(src){
   const s2 = Math.min(1, 560 / Math.max(work.width, work.height));
   const sm = document.createElement('canvas'); sm.width = Math.round(work.width * s2); sm.height = Math.round(work.height * s2);
   sm.getContext('2d').drawImage(work, 0, 0, sm.width, sm.height);
-  Object.assign(my, {photo:true, img: sm.toDataURL('image/jpeg', .68), emb: fingerprint(work), det:null, detSrc:null, boxes:[], err:''});
+  Object.assign(my, {photo:true, img: sm.toDataURL('image/jpeg', .68), emb: fingerprint(work), det:null, detSrc:null, boxes:[], err:'', verdict:null, userEdited:false});
+  $('#capCount').value = '';
   my.est = estimate(my.locId, {det:null, emb:my.emb});
   showPhoto(work, []);
   if (AI.status !== 'offline'){
@@ -1048,14 +1073,15 @@ async function analyzeCanvas(src){
     if (cap === my) $('#viewerBusy').hidden = true;
   } else my.aiState = 'done';
   if (cap !== my) return;
-  if (my.est && !my.userEdited) $('#capCount').value = my.est.value;
   renderAiCard(); updateConfirm();
 }
 
+function needsAnswer(){ return !!(cap && cap.photo && cap.aiState !== 'busy' && cap.est && cap.verdict == null); }
 function renderAiCard(){
   const el = $('#capAi'); if (!cap) return;
+  $('#countBlock').hidden = !(cap.photo && cap.aiState !== 'busy' && (cap.verdict === 'ng' || !cap.est));
   if (!cap.photo){
-    const st = AI.status === 'offline' ? 'AIのモデルを読み込めないため、似た写真の台数から推定します。' : 'AIが写真の中の端末を見つけて数え、過去の目視の台数で補正します。';
+    const st = AI.status === 'offline' ? 'AIのモデルを読み込めないため、似た写真の台数から推定します。' : 'AIが写真の中の端末を見つけて数え、過去の正解との差で補正します。';
     el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-text">撮影すると、AIが自動で台数を判定します。<br><span class="muted">${st}</span></div></div>`; return;
   }
   if (cap.aiState === 'busy'){
@@ -1064,64 +1090,85 @@ function renderAiCard(){
   const e = cap.est;
   const errLine = cap.aiState === 'error' ? `<div class="ai-meta warn">${esc(cap.err)}</div>` : '';
   if (!e){
+    $('#capCountHead').textContent = '目視で数えた台数を入力してください';
     el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-text">まだ判定できません。</div><div class="ai-meta">目視で数えた台数を入力して確定してください。この写真が最初の手本になります。</div>${errLine}</div></div>`; return;
   }
+  $('#capCountHead').textContent = '正しい台数を入力してください';
   const st = e.stats;
   const meta = st ? `過去の誤差 平均±${st.mae.toFixed(1)}台 · 一致率 ${Math.round(st.acc*100)}%（${st.n}件で検証）` : `学習データ ${e.n}件 · 学習中のため参考値です`;
   let detLine = '';
-  if (cap.det != null) detLine = `<div class="ai-meta">写真から ${cap.det} 個を検出（青枠）${cap.det !== e.value ? `、過去の傾向で ${e.value} 台に補正` : ''}</div>`;
-  const v = parseInt($('#capCount').value, 10);
-  const fixed = cap.userEdited && !isNaN(v) && v !== e.value
-    ? `<div class="fix-line">目視で修正：AI ${e.value}台 → ${v}台。この差をAIが学習します</div>` : '';
-  el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-label">${METHODS[e.method].label}</div><div class="ai-num">${e.value}<small>台</small></div><div class="ai-meta">${meta}</div>${detLine}${errLine}</div></div>${fixed}`;
+  if (cap.det != null) detLine = `<div class="ai-meta">写真から ${cap.det} 個を検出（青枠）${cap.det !== e.value ? `、過去の差を使って ${e.value} 台に補正` : ''}</div>`;
+  let tail = '';
+  if (cap.verdict == null){
+    tail = `<div class="ask"><div class="ask-q">この台数で合っていますか？</div><div class="ask-btns"><button class="ask-no" id="askNo">いいえ、違う</button><button class="ask-yes" id="askYes">はい、合っている</button></div></div>`;
+  } else if (cap.verdict === 'ng'){
+    const v = parseInt($('#capCount').value, 10);
+    tail = `<div class="fix-line">「違う」と回答しました。正しい台数を下に入力してください<button id="askBack">回答を変える</button></div>`;
+    if (!isNaN(v)){
+      const d = v - e.value;
+      tail += d === 0
+        ? `<div class="diff-line">入力した台数がAIの判定と同じです。合っている場合は「回答を変える」から「はい」を選んでください。</div>`
+        : `<div class="diff-line">AIの判定 <b>${e.value}台</b> → 正しい台数 <b>${v}台</b>（差 <b class="${d > 0 ? 'warn' : 'ng'}">${d > 0 ? '+' : ''}${d}台</b>）<br>この差を記録して、次からの判定を補正します。</div>`;
+    }
+  }
+  el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-main"><div class="ai-label">AIの判定 · ${METHODS[e.method].label}</div><div class="ai-num">${e.value}<small>台</small></div><div class="ai-meta">${meta}</div>${detLine}${errLine}</div></div>${tail}`;
+  const y = $('#askYes'); if (y) y.onclick = () => saveRecord(e.value, 'ok');
+  const n = $('#askNo'); if (n) n.onclick = () => {
+    cap.verdict = 'ng'; $('#capCount').value = ''; renderAiCard(); updateConfirm();
+    setTimeout(() => { const i = $('#capCount'); i.focus(); i.scrollIntoView({block:'center', behavior:'smooth'}); }, 50);
+  };
+  const b = $('#askBack'); if (b) b.onclick = () => { cap.verdict = null; $('#capCount').value = ''; renderAiCard(); updateConfirm(); };
 }
 function updateConfirm(){
   if (!cap) return;
   const v = $('#capCount').value.trim(); const ok = /^\d+$/.test(v);
   const b = $('#btnConfirm');
+  b.hidden = needsAnswer();
   if (!cap.photo){ b.textContent = cap.trainOnly ? '写真を選ぶ' : 'カメラを開いて撮影する'; b.disabled = false; }
+  else if (cap.aiState === 'busy'){ b.textContent = 'AIが判定しています…'; b.disabled = true; }
   else if (cap.saving){ b.textContent = '保存しています…'; b.disabled = true; }
-  else if (!ok){ b.textContent = '台数を入力してください'; b.disabled = true; }
-  else if (cap.est && +v === cap.est.value){ b.textContent = `AIの判定どおり ${v} 台で確定`; b.disabled = false; }
-  else { b.textContent = `${v} 台で確定してAIに学習させる`; b.disabled = false; }
+  else if (!ok){ b.textContent = '正しい台数を入力してください'; b.disabled = true; }
+  else { b.textContent = cap.est ? `${v} 台で確定して、差を学習させる` : `${v} 台で確定する`; b.disabled = false; }
   const l = locById(cap.locId); const n = $('#capNote');
   if (ok && l && l.expected != null && +v !== l.expected){
     const d = +v - l.expected;
     n.innerHTML = `<span class="ng">基準台数 ${l.expected} 台より ${d>0?'+':''}${d} 台です。もう一度確認してください</span>`;
-  } else if (!cap.photo){
-    n.textContent = '端末がすべて写るように、毎回同じ位置・角度で撮影してください。';
-  } else if (cap.est){
-    n.textContent = 'AIの判定が違っていたら、目視で数えた台数に直してから確定してください。直した内容をAIが学習します。';
   } else {
-    n.textContent = '目視で数えた台数を入力してください。';
+    n.textContent = cap.est ? '写真を見ながら目視で数えた、実際の台数を入力してください。' : '目視で数えた台数を入力してください。';
   }
 }
 const edited = () => { if (cap){ cap.userEdited = true; renderAiCard(); updateConfirm(); } };
 $('#capCount').addEventListener('input', edited);
-$('#btnMinus').onclick = () => { const i = $('#capCount'); i.value = Math.max(0, (parseInt(i.value, 10) || 0) - 1); edited(); };
-$('#btnPlus').onclick = () => { const i = $('#capCount'); const v = parseInt(i.value, 10); i.value = isNaN(v) ? 1 : v + 1; edited(); };
+$('#btnMinus').onclick = () => { const i = $('#capCount'); const v = parseInt(i.value, 10); i.value = Math.max(0, (isNaN(v) ? (cap && cap.est ? cap.est.value : 1) : v) - 1); edited(); };
+$('#btnPlus').onclick = () => { const i = $('#capCount'); const v = parseInt(i.value, 10); i.value = isNaN(v) ? (cap && cap.est ? cap.est.value + 1 : 1) : v + 1; edited(); };
 
-$('#btnConfirm').onclick = async () => {
-  if (!cap) return;
-  if (!cap.photo){
-    if (cap.trainOnly) pickLibrary(); else pickCamera();
-    return;
-  }
-  const c = parseInt($('#capCount').value, 10); if (!(c >= 0)) return;
+async function saveRecord(c, verdict){
+  if (!cap || cap.saving) return;
   const my = cap;
+  const est = my.est ? my.est.value : null;
   const s = {
     id: uid(), locId: my.locId, date: dayKey(), ts: Date.now(), count: c,
     det: my.det, detSrc: my.detSrc || null, emb: my.emb, img: my.img,
-    estimate: my.est ? my.est.value : null, method: my.est ? my.est.method : null,
-    corrected: !!(my.est && my.est.value !== c), trainOnly: my.trainOnly
+    estimate: est, method: my.est ? my.est.method : null,
+    verdict: est == null ? null : (c === est ? 'ok' : 'ng'),   // 人の回答：合っている / 違う
+    diff: est == null ? null : c - est,                        // 正しい台数 − AIの判定
+    rawDiff: my.det == null ? null : c - my.det,               // 正しい台数 − AIの素の検出数
+    trainOnly: my.trainOnly
   };
+  s.corrected = s.verdict === 'ng';
   my.saving = true; updateConfirm();
   try { await Data.putSample(s); }
   catch(e){ my.saving = false; updateConfirm(); toast(writeError(e)); return; }
   closeSheet($('#capSheet')); closeCapture();
-  toast(s.estimate == null ? `記録しました（${locName(s.locId)} の手本 ${phaseOf(s.locId).n} 件目）`
-    : s.corrected ? `目視の修正を学習しました：AI ${s.estimate}台 → ${s.count}台`
-    : `AIの判定どおり ${s.count}台で記録しました`);
+  toast(est == null ? `記録しました（${locName(s.locId)} の手本 ${phaseOf(s.locId).n} 件目）`
+    : s.verdict === 'ok' ? `AIの判定どおり ${c}台で記録しました`
+    : `差を学習しました：AI ${est}台 → 正しくは ${c}台（${s.diff > 0 ? '+' : ''}${s.diff}台）`);
+}
+$('#btnConfirm').onclick = () => {
+  if (!cap) return;
+  if (!cap.photo){ if (cap.trainOnly) pickLibrary(); else pickCamera(); return; }
+  const c = parseInt($('#capCount').value, 10); if (!(c >= 0)) return;
+  saveRecord(c);
 };
 
 /* ---------- 締め summary ---------- */
@@ -1241,6 +1288,11 @@ function renderHistory(){
       const recent = samples.filter(s => s.locId === l.id && s.estimate != null).sort((a, b) => a.ts - b.ts).slice(-21);
       const dots = recent.map(s => { const d = Math.abs(s.estimate - s.count); return `<i class="${d === 0 ? 'ok' : d === 1 ? 'near' : 'ng'}" title="${s.date} AI${s.estimate}/実際${s.count}"></i>`; }).join('');
       const acc = best ? Math.round(best.acc * 100) : 0;
+      const answered = samples.filter(s => s.locId === l.id && s.estimate != null).sort((a, b) => b.ts - a.ts).slice(0, 10);
+      const yes = answered.filter(s => s.count === s.estimate).length;
+      const avgDiff = answered.length ? avg(answered.map(s => s.count - s.estimate)) : 0;
+      const answerLine = answered.length
+        ? `<div class="row-sub" style="margin-top:12px">直近 ${answered.length} 回で「合っている」${yes} 回 · AIとの差は平均 ${avgDiff > 0 ? '+' : ''}${avgDiff.toFixed(1)} 台${Math.abs(avgDiff) >= .5 ? (avgDiff > 0 ? '（AIが少なめに数えがち）' : '（AIが多めに数えがち）') : ''}</div>` : '';
       return `<div class="group acc-card">
         <div class="acc-top">${tile(i)}<div class="row-main"><div class="row-title">${esc(l.name)}</div><div class="row-sub">${best ? `採用中：${METHODS[ev.best].label}` : ev.n < 3 ? `あと ${3 - ev.n} 件で精度の計測を始めます` : '精度を計測中'}</div></div></div>
         <div class="acc-stats">
@@ -1249,9 +1301,10 @@ function renderHistory(){
           <div><b>${best ? '±' + best.mae.toFixed(1) : '—'}</b><span>平均誤差（台）</span></div>
         </div>
         <div class="bar"><span style="width:${acc}%;background:${acc >= 90 ? 'var(--green)' : acc >= 60 ? 'var(--orange)' : 'var(--red)'}"></span></div>
-        ${recent.length ? `<div class="row-sub" style="margin-top:12px">直近のAI推定（緑=一致・橙=1台差・赤=2台以上）</div><div class="dots">${dots}</div>` : ''}
+        ${answerLine}
+        ${recent.length ? `<div class="row-sub" style="margin-top:12px">直近のAI判定（緑=合っている・橙=1台差・赤=2台以上）</div><div class="dots">${dots}</div>` : ''}
       </div>`;
-    }).join('') + `<p class="footnote">精度は「蓄積した写真を1枚ずつ伏せて、残りのデータで当てられるか」で自動検証しています。最も成績のよい方式が自動的に採用されます。一致率90%以上・10件以上になると、撮影時に推定値が自動入力されます。${trainCnt ? `<br>学習専用で追加した写真：${trainCnt}件` : ''}</p>`;
+    }).join('') + `<p class="footnote">精度は「蓄積した写真を1枚ずつ伏せて、残りのデータで当てられるか」で自動検証しています。最も成績のよい方式が自動的に採用されます。「いいえ」と答えて入力した正しい台数とAIの差が、次の判定の補正に使われます。${trainCnt ? `<br>学習専用で追加した写真：${trainCnt}件` : ''}</p>`;
   }
 }
 async function deleteSample(id){
