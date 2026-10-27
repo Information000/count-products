@@ -46,6 +46,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--label);font:17px/1.35 var(--font);letter-spacing:-.01em;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 body.locked{overflow:hidden}
@@ -85,6 +86,12 @@ button.row:disabled{opacity:.4}
 .row-val{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
 .row-val small{font-size:13px;font-weight:500;color:var(--label2);margin-left:2px}
 .row-detail{color:var(--label2);font-size:15px;white-space:nowrap}
+.field{display:flex;align-items:center;gap:12px;padding:11px 16px;min-height:44px;position:relative}
+.field+.field::before{content:"";position:absolute;top:0;right:0;left:16px;height:.5px;background:var(--sep)}
+.field label{font-size:15px;width:96px;flex:none}
+.field input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:16px;padding:0}
+.steps-list{margin:0;padding:8px 36px 0 52px;font-size:13px;color:var(--label2);line-height:1.6}
+.steps-list a{color:var(--blue)}
 .row.link .row-title{color:var(--blue)}
 .row.danger .row-title{color:var(--red)}
 .chev{color:var(--label3);flex:none}
@@ -280,7 +287,7 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
 
     <div class="section-h"><span>場所</span><span>タップして撮影・学習</span></div>
     <div class="group icons" id="locList"></div>
-    <p class="footnote" id="locNote">撮影したら、目視で数えた台数を入力してください。その台数が「正解」としてこの端末に蓄積され、AIが学習します。</p>
+    <p class="footnote" id="locNote">撮影したら、目視で数えた台数を入力してください。その台数が「正解」として蓄積され、AIが学習します。</p>
 
     <div class="section-h"><span>AIの学習</span></div>
     <div class="group" id="learnCard"></div>
@@ -292,7 +299,7 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
   <!-- 履歴 -->
   <section class="view" id="view-history">
     <header class="lt-head">
-      <div class="lt-eyebrow">この端末に蓄積された記録</div>
+      <div class="lt-eyebrow">蓄積された記録</div>
       <h1>履歴</h1>
     </header>
     <div class="seg" id="histSeg">
@@ -497,20 +504,174 @@ const Local = {
   del(id){ return this.req('readwrite', s => s.delete(id)); }
 };
 
+/* GitHub repository storage: records live as JSON files on the "count-data" branch,
+   so saving never rebuilds the published page. The token stays on this device only. */
+const GH_BRANCH = 'count-data';
+const b64enc = str => { const b = new TextEncoder().encode(str); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); };
+const b64dec = s => { const bin = atob(String(s).replace(/\s/g, '')); const b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return new TextDecoder().decode(b); };
+function guessRepo(){
+  const h = location.hostname;
+  if (h.endsWith('.github.io')){ const repo = location.pathname.split('/').filter(Boolean)[0]; return h.split('.')[0] + '/' + (repo || h); }
+  return 'Information000/count-products';
+}
+const GH = {
+  cfg: null,
+  load(){ try { const c = JSON.parse(localStorage.getItem('tc-github')); if (c && c.token && c.repo) this.cfg = c; } catch(e){} },
+  store(c){ this.cfg = c; try { localStorage.setItem('tc-github', JSON.stringify(c)); } catch(e){} },
+  forget(){ this.cfg = null; try { localStorage.removeItem('tc-github'); } catch(e){} },
+  async api(path, opt = {}, cfg = this.cfg){
+    let r;
+    try {
+      r = await fetch('https://api.github.com/repos/' + cfg.repo + path, {
+        method: opt.method || 'GET', cache: 'no-store',
+        headers: Object.assign({'Accept':'application/vnd.github+json', 'Authorization':'Bearer ' + cfg.token, 'X-GitHub-Api-Version':'2022-11-28'}, opt.body ? {'Content-Type':'application/json'} : {}),
+        body: opt.body ? JSON.stringify(opt.body) : undefined
+      });
+    } catch(e){ throw {status: 0}; }
+    if (!r.ok) throw {status: r.status};
+    return r.status === 204 ? null : r.json();
+  },
+  q: Promise.resolve(),
+  // writes to one branch must go one at a time, or GitHub rejects them
+  serial(fn){ const p = this.q.then(fn, fn); this.q = p.catch(() => {}); return p; },
+  async ensureBranch(){
+    try { await this.api('/git/ref/heads/' + GH_BRANCH); return; } catch(e){ if (e.status !== 404) throw e; }
+    const repo = await this.api('');
+    const base = await this.api('/git/ref/heads/' + repo.default_branch);
+    try { await this.api('/git/refs', {method:'POST', body:{ref:'refs/heads/' + GH_BRANCH, sha: base.object.sha}}); }
+    catch(e){ if (e.status !== 422) throw e; }
+  }
+};
+function ghError(e){
+  const s = e && e.status;
+  if (s === 401) return 'GitHubの鍵（トークン）が無効か期限切れです。設定で入れ直してください';
+  if (s === 403 || s === 404) return 'GitHubに書き込む権限がありません。トークンに count-products の「Contents：Read and write」を付けてください';
+  if (s === 409 || s === 422) return '同じタイミングで保存がありました。もう一度お試しください';
+  if (s === 0) return 'GitHubに接続できません。電波の良い場所で「今すぐ同期」を押してください';
+  return 'GitHubとのやり取りに失敗しました（' + s + '）';
+}
+
 const Data = {
   mode: 'local', canWrite: true, downloads: null,
+  syncing: false, lastSync: 0, syncError: null, settingsSha: null,
   async init(){
     await Local.open();
-    // ブラウザが容量不足のときに勝手に消さないよう、永続保存をお願いする
-    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch(e){}
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch(e){}
     try { const s = JSON.parse(localStorage.getItem('tc-site-settings')); if (s && Array.isArray(s.locations) && s.locations.length) settings = Object.assign(DEFAULTS(), s); } catch(e){}
+    GH.load();
+    this.mode = GH.cfg ? 'github' : 'local';
   },
-  subscribe(){ Local.all().then(arr => setSamples(arr)); },
-  async putSample(s){ await Local.put(s); setSamples(samples.filter(x => x.id !== s.id).concat(s)); },
-  async delSample(id){ await Local.del(id); setSamples(samples.filter(x => x.id !== id)); },
-  async saveSettings(){ try { localStorage.setItem('tc-site-settings', JSON.stringify(settings)); } catch(e){ toast('設定を保存できませんでした'); } }
+  async subscribe(){
+    setSamples(await Local.all());
+    if (this.mode === 'github') this.sync();
+  },
+  async sync(){
+    if (this.mode !== 'github' || this.syncing) return;
+    this.syncing = true; renderStatus();
+    try {
+      await GH.ensureBranch();
+      const tree = await GH.api('/git/trees/' + GH_BRANCH + '?recursive=1');
+      const files = (tree.tree || []).filter(t => t.type === 'blob' && /^data\/samples\/[A-Za-z0-9_-]+\.json$/.test(t.path));
+      const remote = new Map(files.map(f => [f.path.slice(13, -5), f.sha]));
+      const local = new Map(samples.map(s => [s.id, s]));
+      const need = [...remote].filter(([id, sha]) => !local.has(id) || local.get(id)._sha !== sha);
+      const got = [];
+      for (let i = 0; i < need.length; i += 6){
+        const part = await Promise.all(need.slice(i, i + 6).map(async ([id, sha]) => {
+          const b = await GH.api('/git/blobs/' + sha);
+          const s = JSON.parse(b64dec(b.content)); s.id = id; s._sha = sha; return s;
+        }));
+        got.push(...part);
+      }
+      for (const s of got) await Local.put(s).catch(() => {});
+      // deleted on another device
+      const gone = samples.filter(s => s._sha && !remote.has(s.id));
+      for (const s of gone) await Local.del(s.id).catch(() => {});
+      const merged = new Map(samples.filter(s => !gone.includes(s)).map(s => [s.id, s]));
+      got.forEach(s => merged.set(s.id, s));
+      setSamples([...merged.values()]);
+      // shared settings
+      const sf = (tree.tree || []).find(t => t.path === 'data/settings.json');
+      if (sf && sf.sha !== this.settingsSha){
+        const b = await GH.api('/git/blobs/' + sf.sha);
+        const d = JSON.parse(b64dec(b.content));
+        if (d && Array.isArray(d.locations) && d.locations.length){
+          settings = Object.assign(DEFAULTS(), d);
+          try { localStorage.setItem('tc-site-settings', JSON.stringify(settings)); } catch(e){}
+        }
+        this.settingsSha = sf.sha;
+      } else if (!sf){ await this.saveSettings(); }
+      // records made on this device before connecting, or while offline
+      const pending = samples.filter(s => !s._sha);
+      for (const s of pending) await this.upload(s);
+      this.syncError = null; this.lastSync = Date.now();
+      if (pending.length) setSamples(samples.slice());
+    } catch(e){ this.syncError = e; toast(ghError(e)); }
+    finally {
+      this.syncing = false; renderStatus(); renderToday();
+      if (currentView() === 'view-settings' && !isTyping()) renderSettings();
+      if (currentView() === 'view-history') renderHistory();
+    }
+  },
+  async upload(s){
+    const body = Object.assign({}, s); delete body._sha;
+    const res = await GH.serial(() => GH.api('/contents/data/samples/' + s.id + '.json', {method:'PUT', body:{
+      message: `記録: ${locName(s.locId)} ${s.date} ${s.count}台${s.trainOnly ? '（学習専用）' : ''}`,
+      content: b64enc(JSON.stringify(body)), branch: GH_BRANCH
+    }}));
+    s._sha = res.content.sha;
+    await Local.put(s).catch(() => {});
+  },
+  async putSample(s){
+    await Local.put(s);
+    setSamples(samples.filter(x => x.id !== s.id).concat(s));
+    if (this.mode === 'github'){
+      try { await this.upload(s); this.syncError = null; renderStatus(); }
+      catch(e){ this.syncError = e; renderStatus(); toast('この端末には保存しました。GitHubへは次の同期で送ります'); }
+    }
+  },
+  async delSample(id){
+    const s = samples.find(x => x.id === id);
+    if (this.mode === 'github' && s && s._sha){
+      await GH.serial(() => GH.api('/contents/data/samples/' + id + '.json', {method:'DELETE', body:{message:'記録を削除', sha:s._sha, branch:GH_BRANCH}}));
+    }
+    await Local.del(id).catch(() => {});
+    setSamples(samples.filter(x => x.id !== id));
+  },
+  async saveSettings(){
+    try { localStorage.setItem('tc-site-settings', JSON.stringify(settings)); } catch(e){}
+    if (this.mode !== 'github') return;
+    const put = sha => GH.api('/contents/data/settings.json', {method:'PUT', body:Object.assign({
+      message:'設定を更新', content: b64enc(JSON.stringify(settings, null, 2)), branch: GH_BRANCH
+    }, sha ? {sha} : {})});
+    try {
+      const res = await GH.serial(async () => {
+        try { return await put(this.settingsSha); }
+        catch(e){
+          if (e.status !== 409 && e.status !== 422) throw e;
+          let cur = null;
+          try { cur = (await GH.api('/contents/data/settings.json?ref=' + GH_BRANCH)).sha; } catch(_){}
+          return await put(cur);
+        }
+      });
+      this.settingsSha = res.content.sha;
+    } catch(e){ toast(ghError(e)); }
+  },
+  async connect(repo, token){
+    const cfg = {repo: repo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/+$/, ''), token: token.trim()};
+    if (!/^[\w.-]+\/[\w.-]+$/.test(cfg.repo)) throw {msg:'リポジトリは「持ち主/名前」の形で入力してください'};
+    if (!cfg.token) throw {msg:'トークンを入力してください'};
+    let info;
+    try { info = await GH.api('', {}, cfg); } catch(e){ throw {msg: e.status === 404 ? 'リポジトリが見つかりません。名前とトークンの対象リポジトリを確認してください' : ghError(e)}; }
+    if (!info.permissions || !info.permissions.push) throw {msg:'このトークンでは書き込めません。「Contents：Read and write」を付けてください'};
+    GH.store(cfg); this.mode = 'github'; this.settingsSha = null;
+    await this.sync();
+  },
+  disconnect(){ GH.forget(); this.mode = 'local'; this.syncError = null; renderStatus(); }
 };
+const isTyping = () => { const a = document.activeElement; return !!(a && /INPUT|TEXTAREA/.test(a.tagName)); };
 function writeError(e){
+  if (e && 'status' in e) return ghError(e);
   const n = e && (e.name || e.code);
   if (n === 'QuotaExceededError') return '保存容量がいっぱいです。履歴の「学習データ」から古い写真を削除してください';
   return '保存できませんでした。もう一度お試しください';
@@ -533,25 +694,28 @@ function setSamples(arr){
 function loadScript(url){ return new Promise((res, rej) => { const s = document.createElement('script'); s.src = url; s.async = true; s.onload = res; s.onerror = () => rej(new Error(url)); document.head.appendChild(s); }); }
 const TF_CLASSES = ['cell phone', 'laptop', 'tv', 'remote'];
 const AI = {
-  tf: null, mn: null, kind: null, status: 'loading',
-  async init(){
-    try {
-      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
-      await Promise.all([
-        loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js'),
-        loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js')
-      ]);
-      await tf.ready();
-      const [d, m] = await Promise.allSettled([cocoSsd.load({base:'lite_mobilenet_v2'}), mobilenet.load({version:2, alpha:1.0})]);
-      if (d.status === 'fulfilled') this.tf = d.value;
-      if (m.status === 'fulfilled') this.mn = m.value;
-    } catch(e){}
-    this.kind = this.tf ? 'tf' : null;
-    this.status = this.tf ? 'ready' : 'offline';
-    renderStatus();
-    if (cap && !cap.photo) renderAiCard();
+  tf: null, kind: null, status: 'idle', loading: null,
+  init(){ this.status = 'idle'; renderStatus(); },
+  // 重いモデルは最初の写真を撮ったときに初めて読み込む（画面の操作を止めないため）
+  ensure(){
+    if (this.tf) return Promise.resolve(this.tf);
+    if (this.loading) return this.loading;
+    this.status = 'loading'; renderStatus();
+    this.loading = (async () => {
+      try {
+        if (!window.tf) await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+        if (!window.cocoSsd) await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+        await tf.ready();
+        this.tf = await cocoSsd.load({base:'lite_mobilenet_v2'});
+        this.kind = 'tf'; this.status = 'ready';
+      } catch(e){ this.status = 'offline'; this.loading = null; }
+      renderStatus();
+      return this.tf;
+    })();
+    return this.loading;
   }
 };
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
 // Small picture fingerprint for "similar photo" learning (no network needed)
 function fingerprint(src){
@@ -658,12 +822,14 @@ const currentView = () => (document.querySelector('.view.active') || {}).id;
 
 function renderStatus(){
   const s = $('#savePill');
-  const sm = Data.mode;
-  s.className = 'pill ' + (sm === 'pending' ? 'loading' : sm);
-  s.lastElementChild.textContent = sm === 'cloud' ? (Data.canWrite ? 'サイトに保存' : 'サイトの記録（閲覧のみ）') : sm === 'local' ? 'この端末に保存' : '保存先を確認中…';
+  if (Data.mode === 'github'){
+    const err = !!Data.syncError;
+    s.className = 'pill ' + (Data.syncing ? 'loading' : err ? 'offline' : 'cloud');
+    s.lastElementChild.textContent = Data.syncing ? 'GitHubと同期中…' : err ? 'GitHub未同期' : 'GitHubに保存';
+  } else { s.className = 'pill local'; s.lastElementChild.textContent = 'この端末に保存'; }
   const p = $('#aiPill');
-  p.className = 'pill ' + AI.status;
-  p.lastElementChild.textContent = AI.status === 'ready' ? (AI.kind === 'tf' ? 'AI 利用可（端末内で処理）' : 'AI 利用可') : AI.status === 'loading' ? 'AI 準備中…' : 'AI 利用不可（似た写真で学習）';
+  p.className = 'pill ' + (AI.status === 'idle' ? 'ready' : AI.status);
+  p.lastElementChild.textContent = AI.status === 'ready' || AI.status === 'idle' ? 'AI 利用可（端末内で処理）' : AI.status === 'loading' ? 'AI 準備中…' : 'AI 利用不可（似た写真で学習）';
 }
 
 function todayRecords(){
@@ -712,7 +878,7 @@ function renderLearn(){
   const locs = settings.locations; const ps = locs.map(l => phaseOf(l.id));
   const allReady = ps.length && ps.every(p => p.key === 'ready');
   const total = samples.filter(s => s.det != null || s.emb).length;
-  const where = Data.mode === 'cloud' ? 'このサイト' : 'この端末';
+  const where = Data.mode === 'github' ? 'GitHub' : 'この端末';
   const title = allReady ? 'AIは実用レベルです' : '目視の台数でAIを学習させましょう';
   const sub = allReady
     ? '撮影すると推定値が自動入力されます。合っているか確認して確定してください。'
@@ -795,19 +961,21 @@ async function analyze(file){
   my.emb = fingerprint(work);
   my.photo = true; my.det = null; my.detSrc = null; my.emb2 = null; my.note = ''; my.est = estimate(my.locId, {det:null, emb:my.emb});
   $('#capImg').src = my.img; $('#capImg').hidden = false; $('#capEmpty').hidden = true; $('#btnRetake').hidden = false;
-  if (AI.tf){
+  if (AI.status !== 'offline'){
     my.aiState = 'busy'; renderAiCard(); updateConfirm();
     try {
-      const preds = await AI.tf.detect(work, 100, 0.35);
-      if (AI.mn){
-        const t = AI.mn.infer(work, true); const arr = await t.data(); t.dispose();
-        let n = 0; for (const v of arr) n += v*v; n = Math.sqrt(n) || 1;
-        my.emb2 = Array.from(arr, v => +(v/n).toFixed(4));
-      }
+      const model = await withTimeout(AI.ensure(), 45000);
+      if (!model) throw new Error('no model');
+      if (cap !== my) return;
+      await new Promise(r => setTimeout(r, 30)); // 画面を一度描き直してから重い処理に入る
+      const small = document.createElement('canvas'); const k = Math.min(1, 640 / Math.max(work.width, work.height));
+      small.width = Math.round(work.width * k); small.height = Math.round(work.height * k);
+      small.getContext('2d').drawImage(work, 0, 0, small.width, small.height);
+      const preds = await withTimeout(model.detect(small, 100, 0.35), 20000);
       if (cap !== my) return;
       my.det = preds.filter(p => TF_CLASSES.includes(p.class)).length; my.detSrc = 'tf';
-      my.aiState = 'done'; my.est = estimate(my.locId, {det:my.det, detSrc:'tf', emb:my.emb, emb2:my.emb2});
-    } catch(e){ if (cap !== my) return; my.aiState = 'error'; my.err = 'AIの推定に失敗しました。台数の入力と学習はそのまま続けられます。'; }
+      my.aiState = 'done'; my.est = estimate(my.locId, {det:my.det, detSrc:'tf', emb:my.emb});
+    } catch(e){ if (cap !== my) return; my.aiState = 'error'; my.err = 'AIの数えが間に合いませんでした。似た写真からの推定で続けます。台数の入力と学習はそのまま行えます。'; }
   } else my.aiState = 'done';
   if (cap !== my) return;
   if (my.phase === 'ready' && my.est && $('#capCount').value === '') $('#capCount').value = my.est.value;
@@ -817,11 +985,11 @@ function renderAiCard(){
   const el = $('#capAi');
   if (!cap) return;
   if (!cap.photo){
-    const st = AI.kind === 'claude' ? 'AIが過去の写真を手本にして台数を数えます。' : AI.kind === 'tf' ? 'AIが写真の端末を検出して数え、過去の正解で補正します。' : AI.status === 'loading' ? 'AIを準備しています…' : 'AIが使えないため、似た写真の台数から推定します。';
+    const st = AI.status !== 'offline' ? 'AIが写真の端末を検出して数え、過去の正解で補正します。' : AI.status === 'loading' ? 'AIを準備しています…' : 'AIが使えないため、似た写真の台数から推定します。';
     el.innerHTML = `<div class="ai-row"><div class="ai-icon">${ICON.sparkle}</div><div class="ai-text">写真を撮ると推定が表示されます。<br><span class="muted">${st}</span></div></div>`; return;
   }
   if (cap.aiState === 'busy' && cap.revealed){
-    el.innerHTML = `<div class="ai-row"><div class="spinner"></div><div class="ai-text muted">AIが写真の端末を数えています…${AI.kind === 'claude' ? '（10〜60秒ほど）' : ''}</div></div>`; return;
+    el.innerHTML = `<div class="ai-row"><div class="spinner"></div><div class="ai-text muted">AIが写真の端末を数えています…</div></div>`; return;
   }
   if (!cap.revealed){
     const bg = cap.aiState === 'busy' ? '<br><span class="muted">AIは裏で数えています。</span>' : '';
@@ -852,17 +1020,15 @@ function updateConfirm(){
   if (cap.phase !== 'ready' && cap.photo && ok && !cap.revealed) cap.revealed = true;
   renderAiCard();
   const b = $('#btnConfirm');
-  const busyAndHidden = cap.aiState === 'busy';
   if (!cap.photo){ b.textContent = cap.trainOnly ? '写真を選んでAIに学習させる' : '撮影してAIに学習させる'; b.disabled = false; }
   else if (cap.saving){ b.textContent = '保存しています…'; b.disabled = true; }
-  else if (busyAndHidden && ok){ b.textContent = 'AIの答えを待っています…'; b.disabled = true; }
   else { b.textContent = 'AIに学習させる'; b.disabled = !ok; }
   const l = locById(cap.locId); const n = $('#capNote');
   if (ok && l && l.expected != null){
     const d = +v - l.expected;
     n.innerHTML = d === 0 ? `<span class="ok">基準台数 ${l.expected} 台と一致しています</span>` : `<span class="ng">基準台数 ${l.expected} 台より ${d>0?'+':''}${d} 台です。もう一度確認してください</span>`;
   } else {
-    n.textContent = cap.photo ? 'AIの値ではなく、実際に数えた台数を入力してください。この値が「正解」としてこの端末に保存され、学習に使われます。' : '写真を撮ると、入力した台数を正解としてAIが学習します。';
+    n.textContent = cap.photo ? 'AIの値ではなく、実際に数えた台数を入力してください。この値が「正解」として保存され、学習に使われます。' : '写真を撮ると、入力した台数を正解としてAIが学習します。';
   }
 }
 $('#capCount').addEventListener('input', updateConfirm);
@@ -970,7 +1136,7 @@ function renderDataList(body){
 }
 $('#delSel').onclick = async () => {
   const ids = [...selected]; if (!ids.length) return;
-  const yes = await ask({title:`${ids.length} 件の学習データを削除しますか？`, message:'写真と台数がこの端末から削除され、AIの学習にも使われなくなります。元に戻せません。', ok:'削除', danger:true});
+  const yes = await ask({title:`${ids.length} 件の学習データを削除しますか？`, message:'写真と台数が削除され、AIの学習にも使われなくなります。元に戻せません。', ok:'削除', danger:true});
   if (!yes) return;
   let n = 0; $('#delSel').disabled = true; $('#delSel').textContent = '削除しています…';
   for (const id of ids){ try { await Data.delSample(id); selected.delete(id); n++; } catch(e){ toast(writeError(e)); break; } }
@@ -1038,20 +1204,42 @@ function renderSettings(){
     </div>`).join('');
   const addRow = locs.length < 5 && !ro ? `<button class="row link" id="addLoc"><span class="tile" style="background:none">${ICON.plus}</span><div class="row-main"><div class="row-title">場所を追加</div></div></button>` : '';
   const withPhoto = samples.filter(s => s.det != null || s.emb).length;
-  const where = Data.mode === 'cloud' ? 'このサイト（共有）' : Data.mode === 'local' ? 'この端末のブラウザ' : '確認中';
-  const whereSub = Data.mode === 'cloud' ? 'このページを開ける人全員で同じ記録と学習データを使います' : 'このブラウザに蓄積されます。別の端末へはバックアップで移せます';
+  const gh = Data.mode === 'github';
+  const pendingN = samples.filter(s => !s._sha).length;
+  const ghBlock = gh ? `
+    <div class="section-h"><span>GitHubに保存</span></div>
+    <div class="group icons">
+      <div class="row">${tile(0, ICON.cloud)}<div class="row-main"><div class="row-title">${esc(GH.cfg.repo)}</div><div class="row-sub">${Data.syncing ? '同期中…' : Data.syncError ? '<span class="ng">' + esc(ghError(Data.syncError)) + '</span>' : Data.lastSync ? fmtTime(Data.lastSync) + ' に同期' : '未同期'}${pendingN ? ` · 未送信 ${pendingN} 件` : ''}</div></div></div>
+      <button class="row link" id="ghSync" ${Data.syncing ? 'disabled' : ''}>${tile(1, ICON.up)}<div class="row-main"><div class="row-title">今すぐ同期</div><div class="row-sub">ほかの端末で追加・削除した記録を取り込みます</div></div></button>
+      <button class="row danger" id="ghOff">${tile(4, ICON.trash)}<div class="row-main"><div class="row-title">この端末の接続を解除</div><div class="row-sub">GitHub上のデータは消えません</div></div></button>
+    </div>
+    <p class="footnote">記録と写真は ${esc(GH.cfg.repo)} の「${GH_BRANCH}」ブランチの data フォルダに保存され、接続したすべての端末で同じデータを使って学習します。</p>` : `
+    <div class="section-h"><span>GitHubに保存</span></div>
+    <div class="group">
+      <div class="field"><label for="ghRepo">リポジトリ</label><input id="ghRepo" value="${esc(guessRepo())}" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label for="ghToken">トークン</label><input id="ghToken" type="password" placeholder="github_pat_…" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+      <button class="row link" id="ghConnect">${tile(0, ICON.cloud)}<div class="row-main"><div class="row-title">接続してGitHubに保存する</div><div class="row-sub">この端末の記録（${samples.length} 件）もGitHubに送ります</div></div></button>
+    </div>
+    <p class="footnote">今はこの端末の中にだけ保存しています。GitHubに接続すると、記録と写真がリポジトリに貯まり、どの端末からでも同じデータで学習できます。トークンの作り方：</p>
+    <ol class="steps-list">
+      <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHubの新しいトークン作成画面</a>を開く</li>
+      <li>Repository access で「Only select repositories」→ count-products を選ぶ</li>
+      <li>Permissions の Contents を「Read and write」にして作成し、表示された文字列をここに貼る</li>
+    </ol>
+    <p class="footnote">トークンはこの端末の中にだけ保存されます。リポジトリが公開設定の場合、保存した写真と記録は誰でも見られます。</p>`;
   $('#setBody').innerHTML = `
     <div class="section-h"><span>カウントする場所（${locs.length}/5）</span></div>
     <div class="group icons">${locRows}${addRow}</div>
-    <p class="footnote">「基準」に通常あるべき台数を入れておくと、ズレたときに赤く知らせます（空欄でも可）。設定もこの端末に保存されます。</p>
+    <p class="footnote">「基準」に通常あるべき台数を入れておくと、ズレたときに赤く知らせます（空欄でも可）。設定は、GitHubに接続していれば全端末で共有されます。</p>
 
     <div class="section-h"><span>AIに数えさせるもの</span></div>
     <div class="group"><textarea class="textarea" id="targetText" rows="3" aria-label="AIに数えさせるもの" ${dis}>${esc(settings.target)}</textarea></div>
     <p class="footnote">AIへの説明です。「充電中の端末も数える」「予備の箱は数えない」など、現場のルールを書くと正確になります。</p>
 
-    <div class="section-h"><span>保存と学習</span></div>
+    ${ghBlock}
+
+    <div class="section-h"><span>学習</span></div>
     <div class="group icons">
-      <div class="row">${tile(0, ICON.cloud)}<div class="row-main"><div class="row-title">保存先</div><div class="row-sub">${whereSub}</div></div><span class="row-detail">${where}</span></div>
       <div class="row">${tile(1, ICON.brain)}<div class="row-main"><div class="row-title">学習データ</div></div><span class="row-detail">${withPhoto} 件</span></div>
       <button class="row link" id="trainPast" ${dis}>${tile(3, ICON.photo)}<div class="row-main"><div class="row-title">過去の写真で学習させる</div><div class="row-sub">写真を選んで正解の台数を入力</div></div>${ICON.chev}</button>
     </div>
@@ -1060,10 +1248,23 @@ function renderSettings(){
     <div class="group icons">
       ${Data.downloads || Data.mode === 'local' ? `<button class="row link" id="expJson">${tile(0, ICON.down)}<div class="row-main"><div class="row-title">バックアップを書き出す</div><div class="row-sub">写真・学習データを含むJSON</div></div></button>
       <button class="row link" id="expCsv">${tile(1, ICON.doc)}<div class="row-main"><div class="row-title">記録をCSVで書き出す</div><div class="row-sub">Excel・Numbersで開けます</div></div></button>` : ''}
-      <button class="row link" id="impJson" ${dis}>${tile(0, ICON.up)}<div class="row-main"><div class="row-title">データを読み込む</div><div class="row-sub">以前のバックアップ（JSON）をこの端末に取り込む</div></div></button>
+      <button class="row link" id="impJson" ${dis}>${tile(0, ICON.up)}<div class="row-main"><div class="row-title">データを読み込む</div><div class="row-sub">以前のバックアップ（JSON）を取り込む${gh ? '（GitHubにも送ります）' : ''}</div></div></button>
       <button class="row danger" id="wipe" ${dis}>${tile(4, ICON.trash)}<div class="row-main"><div class="row-title">すべての記録を削除</div></div></button>
     </div>
-    <p class="footnote">${Data.mode === 'cloud' ? '写真はAIの手本として縮小してサイトに保存されます。AIに数えさせるときは、開いている人の Claude の利用枠を使います（初回に許可を求められます）。' : '写真と記録はこのブラウザの中にだけ保存され、外部には送信されません。ブラウザのデータを消すと失われるため、ときどきバックアップを書き出してください。'}</p>`;
+    <p class="footnote">${gh ? 'すべての記録を削除すると、GitHub上の記録も削除されます。' : '写真と記録はこのブラウザの中にだけ保存されています。ブラウザのデータを消すと失われるため、GitHubに接続するか、ときどきバックアップを書き出してください。'}</p>`;
+
+  const ghc = $('#ghConnect');
+  if (ghc) ghc.onclick = async () => {
+    ghc.disabled = true; ghc.querySelector('.row-title').textContent = '接続しています…';
+    try { await Data.connect($('#ghRepo').value, $('#ghToken').value); toast('GitHubに接続しました'); }
+    catch(e){ toast(e.msg || ghError(e)); }
+    renderSettings(); renderStatus();
+  };
+  const ghs = $('#ghSync'); if (ghs) ghs.onclick = () => Data.sync();
+  const gho = $('#ghOff'); if (gho) gho.onclick = async () => {
+    const yes = await ask({title:'この端末の接続を解除しますか？', message:'GitHub上のデータはそのまま残ります。この端末では、以後の記録が端末の中にだけ保存されます。', ok:'解除', danger:true});
+    if (!yes) return; Data.disconnect(); renderSettings();
+  };
 
   if (ro) return;
   document.querySelectorAll('[data-name]').forEach(inp => inp.onchange = () => { const l = locById(inp.dataset.name); if (!l) return; l.name = inp.value.trim() || l.name; inp.value = l.name; Data.saveSettings(); renderToday(); });
@@ -1085,7 +1286,7 @@ function renderSettings(){
   if ($('#expCsv')) $('#expCsv').onclick = exportCsv;
   $('#impJson').onclick = () => { const i = $('#importInput'); i.value = ''; i.click(); };
   $('#wipe').onclick = async () => {
-    const yes = await ask({title:'すべての記録を削除しますか？', message:`記録と学習データ ${samples.length} 件をこの端末から削除します。元に戻せません。`, ok:'すべて削除', danger:true});
+    const yes = await ask({title:'すべての記録を削除しますか？', message:`記録と学習データ ${samples.length} 件を削除します。元に戻せません。`, ok:'すべて削除', danger:true});
     if (!yes) return;
     const ids = samples.map(s => s.id); let n = 0;
     toast('削除しています…');
@@ -1120,7 +1321,8 @@ async function save(filename, data){
   catch(e){ if (e && e.code !== 'declined') toast('書き出せませんでした'); }
 }
 function exportJson(){
-  save(`terminal-count-backup-${dayKey()}.json`, JSON.stringify({app:'terminal-count', version:2, exportedAt:new Date().toISOString(), settings, samples}));
+  const clean = samples.map(s => { const o = Object.assign({}, s); delete o._sha; return o; });
+  save(`terminal-count-backup-${dayKey()}.json`, JSON.stringify({app:'terminal-count', version:2, exportedAt:new Date().toISOString(), settings, samples: clean}));
 }
 function exportCsv(){
   const rows = [['日付','時刻','場所','台数（目視）','AI推定','推定方式','AIの素の数え','学習専用']];
@@ -1156,7 +1358,11 @@ $('#importInput').onchange = async e => {
 };
 
 /* ---------- init ---------- */
-document.addEventListener('visibilitychange', () => { if (!document.hidden) renderToday(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  renderToday();
+  if (Data.mode === 'github' && Date.now() - Data.lastSync > 60000) Data.sync();
+});
 renderStatus(); renderToday();
 Data.init().then(() => { renderStatus(); Data.subscribe(); renderToday(); if (currentView() === 'view-settings') renderSettings(); });
 AI.init();
