@@ -168,7 +168,9 @@ button.row:disabled{opacity:.4}
 .viewer{position:relative;margin:8px 16px 0;border-radius:14px;overflow:hidden;background:#000000;aspect-ratio:3/4;max-height:62vh;max-width:calc(100% - 32px);margin-left:auto;margin-right:auto}
 @media (min-width:500px){.viewer{aspect-ratio:4/3}}
 .viewer video,#capImg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000000;display:block}
-.viewer-msg{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:12px;color:rgba(255,255,255,.82);text-align:center;padding:24px 28px 96px;font-size:15px;line-height:1.5}
+.viewer-msg{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:12px;color:rgba(255,255,255,.82);text-align:center;padding:24px 28px;font-size:15px;line-height:1.5}
+.viewer-msg .photo-actions{margin-top:4px}
+.viewer-msg .btn-tinted{background:rgba(255,255,255,.18);color:#ffffff}
 .viewer-msg svg{width:46px;height:46px;color:rgba(255,255,255,.7)}
 .viewer-busy{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;background:rgba(0,0,0,.6);color:#ffffff;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:500;white-space:nowrap;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .spinner.light{border-color:rgba(255,255,255,.3);border-top-color:#ffffff;width:16px;height:16px;border-width:2px}
@@ -179,9 +181,8 @@ button.row:disabled{opacity:.4}
 .vbtn svg{width:22px;height:22px}
 .retake{grid-column:2;height:38px;padding:0 20px;border-radius:999px;background:rgba(255,255,255,.92);color:#000000;font-weight:600;font-size:15px;display:inline-flex;align-items:center;gap:6px}
 .retake svg{width:16px;height:16px}
-.flash{position:absolute;inset:0;background:#ffffff;opacity:0;pointer-events:none}
-.flash.go{animation:flash .35s ease-out}
-@keyframes flash{0%{opacity:.85}100%{opacity:0}}
+/* file pickers stay in the page (not display:none) so phones allow opening the camera from a script */
+.file-in{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none}
 .fix-line{display:flex;align-items:center;gap:8px;margin:0 16px 14px;padding:9px 12px;border-radius:10px;background:var(--blue-tint);color:var(--blue);font-size:13px;font-weight:500;line-height:1.4}
 .photo-retake{position:absolute;right:10px;top:10px;height:30px;padding:0 12px;border-radius:999px;background:rgba(0,0,0,.5);color:#ffffff;font-size:13px;font-weight:600;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .spinner{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--fill);border-top-color:var(--label2);animation:spin .8s linear infinite;flex:none}
@@ -363,15 +364,11 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
     <div class="sheet-nav"><button class="nav-btn" id="capCancel" data-close>キャンセル</button><div class="sheet-title" id="capTitle"></div><span></span></div>
     <div class="sheet-body" id="capBody">
       <div class="viewer" id="viewer">
-        <video id="camVideo" playsinline muted autoplay hidden></video>
         <img id="capImg" alt="撮影した写真とAIが見つけた端末" hidden>
         <div class="viewer-msg" id="viewerMsg"></div>
-        <div class="flash" id="flash"></div>
         <div class="viewer-busy" id="viewerBusy" hidden><span class="spinner light"></span><span>AIが台数を数えています…</span></div>
-        <div class="viewer-bar">
-          <button class="vbtn" id="btnPick" aria-label="写真を選ぶ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M21 15l-5-5-8 9"/></svg></button>
-          <button class="shutter" id="btnShoot" aria-label="撮影する" hidden></button>
-          <button class="retake" id="btnRetake" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v6h6"/><path d="M20 12A8 8 0 0 0 5.5 7.3L4 10"/><path d="M4 12a8 8 0 0 0 14.5 4.7"/></svg>撮り直す</button>
+        <div class="viewer-bar" id="viewerBar" hidden>
+          <button class="retake" id="btnRetake"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v6h6"/><path d="M20 12A8 8 0 0 0 5.5 7.3L4 10"/><path d="M4 12a8 8 0 0 0 14.5 4.7"/></svg>撮り直す</button>
         </div>
       </div>
 
@@ -425,9 +422,9 @@ body.selecting .app{padding-bottom:calc(190px + env(safe-area-inset-bottom,0px))
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<input type="file" id="camInput" accept="image/*" capture="environment" hidden>
-<input type="file" id="libInput" accept="image/*" hidden>
-<input type="file" id="importInput" accept="application/json,.json" hidden>
+<input type="file" id="camInput" class="file-in" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+<input type="file" id="libInput" class="file-in" accept="image/*" tabindex="-1" aria-hidden="true">
+<input type="file" id="importInput" class="file-in" accept="application/json,.json" tabindex="-1" aria-hidden="true">
 
 <script>
 (() => {
@@ -923,62 +920,19 @@ document.querySelectorAll('.sheet').forEach(sh => sh.addEventListener('click', e
   if (e.target === sh || e.target.closest('[data-close]')) closeSheet(sh);
 }));
 
-/* ---------- camera ---------- */
-const Cam = {
-  stream: null,
-  supported: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
-  async start(){
-    if (!this.supported) throw {name:'Unsupported'};
-    if (!this.stream){
-      this.stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1440}}});
-    }
-    const v = $('#camVideo');
-    v.muted = true; v.setAttribute('playsinline', ''); v.srcObject = this.stream;
-    await v.play().catch(() => {});
-  },
-  stop(){
-    if (this.stream){ this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
-    const v = $('#camVideo'); if (v) v.srcObject = null;
-  },
-  grab(){
-    const v = $('#camVideo'); if (!v.videoWidth) return null;
-    const k = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
-    const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
-    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-    return c;
-  }
-};
-
-// state: 'starting' | 'live' | 'photo' | 'nocam'
-function setViewer(state, msg){
-  $('#camVideo').hidden = state !== 'live';
+/* ---------- photo area ---------- */
+// state: 'empty' | 'photo'
+function setViewer(state){
   $('#capImg').hidden = state !== 'photo';
-  const m = $('#viewerMsg');
-  m.hidden = !(state === 'starting' || state === 'nocam');
-  if (state === 'starting') m.innerHTML = `${ICON.camera}<span>カメラを起動しています…</span>`;
-  if (state === 'nocam'){
+  $('#viewerBar').hidden = state !== 'photo';
+  const m = $('#viewerMsg'); m.hidden = state === 'photo';
+  if (state !== 'photo'){
+    $('#viewerBusy').hidden = true;
     const lib = cap && cap.trainOnly;
-    m.innerHTML = `${ICON.camera}<span>${esc(msg || '')}</span><button class="btn-filled" id="btnNative">${lib ? '写真を選ぶ' : 'カメラで撮影する'}</button>`;
-    $('#btnNative').onclick = lib ? pickLibrary : pickCamera;
-  }
-  $('#btnShoot').hidden = state !== 'live';
-  $('#btnRetake').hidden = state !== 'photo';
-  $('#btnPick').hidden = state === 'photo';
-  if (state !== 'photo') $('#viewerBusy').hidden = true;
-}
-async function startLive(){
-  const my = cap; if (!my) return;
-  setViewer('starting');
-  try {
-    await Cam.start();
-    if (cap !== my || my.photo){ if (!cap || cap.photo) Cam.stop(); return; }
-    setViewer('live');
-  } catch(e){
-    if (cap !== my) return;
-    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
-    setViewer('nocam', denied
-      ? 'カメラの使用が許可されていません。ブラウザの設定でこのサイトのカメラを許可するか、下のボタンで撮影してください。'
-      : 'このブラウザではページ内のカメラを使えません。下のボタンで撮影してください。');
+    m.innerHTML = `${ICON.camera}<span>${lib ? '過去に撮った写真を選ぶと、AIが台数を判定します。' : '撮影すると、AIが自動で台数を判定します。<br>端末がすべて写るように撮ってください。'}</span>
+      <div class="photo-actions">${lib ? '' : '<button class="btn-filled" id="btnShoot">撮影する</button>'}<button class="${lib ? 'btn-filled' : 'btn-tinted'}" id="btnPick">写真を選ぶ</button></div>`;
+    const s = $('#btnShoot'); if (s) s.onclick = pickCamera;
+    $('#btnPick').onclick = pickLibrary;
   }
 }
 
@@ -991,30 +945,22 @@ function openCapture(locId, trainOnly){
   renderAiCard(); updateConfirm();
   $('#capBody').scrollTop = 0;
   openSheet($('#capSheet'));
-  if (AI.status !== 'offline') AI.ensure(); // 撮影までにAIの準備を始めておく
-  if (trainOnly) setViewer('nocam', '過去に撮った写真を選んでください。');
-  else startLive();
+  setViewer('empty');
+  // タップと同時にスマホのカメラを開く（カメラ画面は操作の直後にしか開けないため、ここで呼ぶ）
+  if (!trainOnly) pickCamera();
+  if (AI.status !== 'offline') setTimeout(() => { if (cap) AI.ensure(); }, 300); // 撮影している間にAIの準備をしておく
 }
-function closeCapture(){ Cam.stop(); cap = null; }
+function closeCapture(){ cap = null; }
 $('#capSheet').addEventListener('click', e => { if (e.target === $('#capSheet') || e.target.closest('[data-close]')) closeCapture(); });
 function pickCamera(){ const i = $('#camInput'); i.value = ''; i.click(); }
 function pickLibrary(){ const i = $('#libInput'); i.value = ''; i.click(); }
 
-function shoot(){
-  if (!cap) return;
-  const c = Cam.grab(); if (!c){ toast('カメラの準備ができていません。少し待ってからもう一度押してください'); return; }
-  const f = $('#flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
-  Cam.stop();
-  analyzeCanvas(c);
-}
-$('#btnShoot').onclick = shoot;
-$('#btnPick').onclick = pickLibrary;
 $('#btnRetake').onclick = () => {
   if (!cap) return;
   Object.assign(cap, {photo:false, img:null, emb:null, det:null, detSrc:null, boxes:[], est:null, aiState:'idle', userEdited:false});
   $('#capCount').value = '';
-  renderAiCard(); updateConfirm();
-  if (cap.trainOnly) setViewer('nocam', '過去に撮った写真を選んでください。'); else startLive();
+  setViewer('empty'); renderAiCard(); updateConfirm();
+  if (cap.trainOnly) pickLibrary(); else pickCamera();
 };
 async function fileToCanvas(file){
   const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
@@ -1026,7 +972,7 @@ async function fileToCanvas(file){
 }
 const onFile = async e => {
   const f = e.target.files[0]; if (!f || !cap) return;
-  try { const c = await fileToCanvas(f); Cam.stop(); analyzeCanvas(c); }
+  try { const c = await fileToCanvas(f); analyzeCanvas(c); }
   catch(err){ toast('この写真は読み込めませんでした。別の写真をお試しください'); }
 };
 $('#camInput').onchange = onFile;
@@ -1133,7 +1079,7 @@ function updateConfirm(){
   if (!cap) return;
   const v = $('#capCount').value.trim(); const ok = /^\d+$/.test(v);
   const b = $('#btnConfirm');
-  if (!cap.photo){ b.textContent = cap.trainOnly ? '写真を選ぶ' : '撮影する'; b.disabled = false; }
+  if (!cap.photo){ b.textContent = cap.trainOnly ? '写真を選ぶ' : 'カメラを開いて撮影する'; b.disabled = false; }
   else if (cap.saving){ b.textContent = '保存しています…'; b.disabled = true; }
   else if (!ok){ b.textContent = '台数を入力してください'; b.disabled = true; }
   else if (cap.est && +v === cap.est.value){ b.textContent = `AIの判定どおり ${v} 台で確定`; b.disabled = false; }
@@ -1158,8 +1104,7 @@ $('#btnPlus').onclick = () => { const i = $('#capCount'); const v = parseInt(i.v
 $('#btnConfirm').onclick = async () => {
   if (!cap) return;
   if (!cap.photo){
-    if (!$('#btnShoot').hidden) shoot();
-    else if (cap.trainOnly) pickLibrary(); else pickCamera();
+    if (cap.trainOnly) pickLibrary(); else pickCamera();
     return;
   }
   const c = parseInt($('#capCount').value, 10); if (!(c >= 0)) return;
@@ -1485,8 +1430,7 @@ $('#importInput').onchange = async e => {
 
 /* ---------- init ---------- */
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden){ Cam.stop(); return; }
-  if (cap && !cap.photo && !cap.trainOnly && $('#capSheet').classList.contains('open')) startLive();
+  if (document.hidden) return;
   renderToday();
   if (Data.mode === 'github' && Date.now() - Data.lastSync > 60000) Data.sync();
 });
